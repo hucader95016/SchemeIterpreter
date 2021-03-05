@@ -1,0 +1,32 @@
+# include <stdio.h>
+# include <string>
+# include <iostream>
+# include <stdlib.h>
+# include <vector>
+
+using namespace std ;
+
+enum TokenType {
+  INT, STRING, DOT, FLOAT, NIL,
+  T, QUOTE, SYMBOL, LEFT_PAREN, RIGHT_PAREN 
+};
+
+struct 
+
+class Scanner() {
+  private :
+    vector<string> TokenList ;
+
+  public :
+	bool GetToken( string token ) ;
+    bool PeekToken( string nextToken ) ;
+} // class Scanner
+
+class Parser() {
+  private :
+    vector<> parserTree ; 
+} // class Parser
+
+int main() {
+	
+} // main()
