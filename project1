@@ -6,27 +6,135 @@
 
 using namespace std ;
 
+int gLine = 0 ; 
+int gColumn = 0 ;
+int uTestNum ;
+
 enum TokenType {
   INT, STRING, DOT, FLOAT, NIL,
   T, QUOTE, SYMBOL, LEFT_PAREN, RIGHT_PAREN 
 };
 
-struct 
+struct Token {
+  int tokenType ;
+  string lexeme ;   
+  // int line ;
+  int column ;
+} ; 
 
-class Scanner() {
-  private :
-    vector<string> TokenList ;
+struct TokenList {
+  Token token ;
+  vector<TokenList> nextToken ;  
+} ;
 
-  public :
-	bool GetToken( string token ) ;
-    bool PeekToken( string nextToken ) ;
-} // class Scanner
+struct ANodeOfLine {
+  int line ;
+  TokenList tokenList ;
+  ANodeOfLine *next ;
+} ;
 
-class Parser() {
-  private :
-    vector<> parserTree ; 
-} // class Parser
+typedef ANodeOfLine *ANodeOfLinePtr ;
+
+void ReadSExp() ; 
+string GetToken() ; // return false if doesn't get token
+bool IsWhiteSpace( char ch ) ;
+bool IsSeparator( char ch ) ;
+void SkipWhiteSpace() ;
 
 int main() {
-	
+  scanf( "%d", &uTestNum ) ;
+  cout << "Welcome to OurScheme!" ;
+  cout << "\n" ;
+  cout << "> " ;
+  ReadSExp() ;
+  /*
+  repeat
+  
+    ReadSExp(expr);
+    
+    PrintSExp(expr); // You must "pretty print" this data structure.
+      
+    Print '> '
+    
+  until (OR (user entered '(exit)')
+            (END-OF-FILE encountered)
+        )
+  
+  if ( END-OF-FILE encountered ) // and NOT ?user entered '(exit)'?
+    Print 'ERROR (no more input) : END-OF-FILE encountered' 
+
+  Print '\n'
+  Print 'Thanks for using OurScheme!' // Doesn't matter whether there is an
+                                      // '\n' at the end
+  */
 } // main()
+
+void ReadSExp() {
+  Token token ;
+  token.lexeme = GetToken() ;
+  while ( token.lexeme != "exit" && token.lexeme != "" ) {
+    cout << token.lexeme << endl ;
+    cout << "> " ;
+    token.lexeme = GetToken() ;
+    // judge the token type
+    // put token into tokenlist
+    // with the way to build tree(pretty print)
+  } // while
+} // ReadSExp()
+
+string GetToken() {
+  char ch ;
+  string token = "" ;
+  bool firstIsSprt = true ;
+  SkipWhiteSpace() ;
+  while ( !IsSeparator( cin.peek() ) ) {
+    scanf( "%c", &ch ) ;
+    token += ch ;
+    firstIsSprt = false ;
+  } // while
+
+  if ( firstIsSprt ) {
+    scanf( "%c", &ch ) ;
+    token += ch ;
+  } // if
+
+  return token ;
+} // GetToken()
+
+bool IsWhiteSpace( char ch ) { // ' ', '\n', '\t', end of file
+  if ( ch == ' ' )
+    return true ;
+  else if ( ch == '\n' )
+    return true ;
+  else if ( ch == '\t' )
+    return true ;
+  else 
+    return false ; 
+} // IsWhiteSpace()
+
+bool IsSeparator( char ch ) { // white space, '(', ')', '\'', '\"', ';'
+  if ( IsWhiteSpace( ch ) )
+    return true ;
+  else if ( ch == '(' )
+    return true ;
+  else if ( ch == ')' )
+    return true ;
+  else if ( ch == '\'' )
+    return true ;
+  else if ( ch == '\"' )
+    return true ;
+  else if ( ch == ';' )
+    return true ;
+  else 
+    return false ;
+} // IsSeparator()
+
+void SkipWhiteSpace() {
+  while ( IsWhiteSpace( cin.peek() ) ) {
+    char ch ;
+    scanf( "%c", &ch ) ;
+    if ( ch == '\n' )
+      gLine++ ;
+  } // while
+} // SkipWhiteSpace()
+
