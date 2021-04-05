@@ -8,7 +8,7 @@ using namespace std ;
 
 int gLine = 0 ; 
 int gColumn = 0 ;
-int uTestNum ;
+int gTestNum ;
 
 enum TokenType {
   INT, STRING, DOT, FLOAT, NIL,
@@ -22,31 +22,28 @@ struct Token {
   int column ;
 } ; 
 
-struct TokenList {
-  Token token ;
-  vector<TokenList> nextToken ;  
-} ;
-
 struct ANodeOfLine {
   int line ;
-  TokenList tokenList ;
+  vector<Token> tokenList ;
   ANodeOfLine *next ;
 } ;
 
 typedef ANodeOfLine *ANodeOfLinePtr ;
 
-void ReadSExp() ; 
-string GetToken() ; // return false if doesn't get token
+void ReadSExp( ANodeOfLinePtr &programHead ) ; 
+string GetToken( bool &eol ) ; // return false if doesn't get token
 bool IsWhiteSpace( char ch ) ;
 bool IsSeparator( char ch ) ;
 void SkipWhiteSpace() ;
+void SkipComment() ;
 
 int main() {
-  scanf( "%d", &uTestNum ) ;
+  ANodeOfLinePtr programHead ;
+  scanf( "%d", &gTestNum ) ;
   cout << "Welcome to OurScheme!" ;
   cout << "\n" ;
   cout << "> " ;
-  ReadSExp() ;
+  ReadSExp( programHead ) ;
   /*
   repeat
   
@@ -69,26 +66,49 @@ int main() {
   */
 } // main()
 
-void ReadSExp() {
+void ReadSExp( ANodeOfLinePtr &programHead ) {
   Token token ;
-  token.lexeme = GetToken() ;
-  while ( token.lexeme != "exit" && token.lexeme != "" ) {
-    cout << token.lexeme << endl ;
-    cout << "> " ;
-    token.lexeme = GetToken() ;
+  programHead = new ANodeOfLine ;
+  ANodeOfLinePtr walk = programHead ;
+  programHead -> next = NULL ;
+  bool eol = false ; // END_OF_LINE
+
+  token.lexeme = GetToken( eol ) ;
+  while ( cin.peek() != EOF && token.lexeme != "exit" ) {
+    walk -> tokenList.push_back( token ) ;
+    if ( eol )  {
+      // assign line to a node of line
+      for ( int i = 0 ; i < walk -> tokenList.size() ; i++ ) {
+        cout << walk -> tokenList[i].lexeme ;
+      } // for
+  
+      cout << endl ;
+      cout << "> " ;
+      walk -> next = new ANodeOfLine ;
+      walk = walk -> next ;
+      walk -> next = NULL ;
+      eol = false ;
+    } // if
+
+    token.lexeme = GetToken( eol ) ;
     // judge the token type
     // put token into tokenlist
     // with the way to build tree(pretty print)
   } // while
 } // ReadSExp()
 
-string GetToken() {
+string GetToken( bool &eol ) {
   char ch ;
   string token = "" ;
   bool firstIsSprt = true ;
+  eol = false ;
   SkipWhiteSpace() ;
-  while ( !IsSeparator( cin.peek() ) ) {
+  while ( cin.peek() != EOF && !IsSeparator( cin.peek() ) ) {
     scanf( "%c", &ch ) ;
+    if ( ch == ';' ) { // skip comment ;
+      SkipComment() ;
+    } // if
+
     token += ch ;
     firstIsSprt = false ;
   } // while
@@ -96,6 +116,10 @@ string GetToken() {
   if ( firstIsSprt ) {
     scanf( "%c", &ch ) ;
     token += ch ;
+  } // if
+
+  if ( cin.peek() == '\n' ) {
+    eol = true ;
   } // if
 
   return token ;
@@ -130,11 +154,18 @@ bool IsSeparator( char ch ) { // white space, '(', ')', '\'', '\"', ';'
 } // IsSeparator()
 
 void SkipWhiteSpace() {
-  while ( IsWhiteSpace( cin.peek() ) ) {
+  while ( cin.peek() != EOF && IsWhiteSpace( cin.peek() ) ) {
     char ch ;
     scanf( "%c", &ch ) ;
     if ( ch == '\n' )
       gLine++ ;
   } // while
 } // SkipWhiteSpace()
+
+void SkipComment() {
+  char cStr[256] ;
+  if ( !cin.get( cStr, 256, '\n' ) )
+    cout << "error：last  line is comment\n" ;
+} // SkipComment
+
 
