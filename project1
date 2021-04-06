@@ -36,12 +36,16 @@ bool IsWhiteSpace( char ch ) ;
 bool IsSeparator( char ch ) ;
 void SkipWhiteSpace() ;
 void SkipComment() ;
+bool IsExit( vector<Token> tokenList ) ;
+int DefToken( string lexeme ) ;
+bool IsNum( char ch ) ;
+bool IsOperator( char ch ) ; // +,-,*,/
 
 int main() {
   ANodeOfLinePtr programHead ;
   scanf( "%d", &gTestNum ) ;
   cout << "Welcome to OurScheme!" ;
-  cout << "\n" ;
+  cout << "\n\n" ;
   cout << "> " ;
   ReadSExp( programHead ) ;
   /*
@@ -72,28 +76,34 @@ void ReadSExp( ANodeOfLinePtr &programHead ) {
   ANodeOfLinePtr walk = programHead ;
   programHead -> next = NULL ;
   bool eol = false ; // END_OF_LINE
+  bool exit = false ; 
 
   token.lexeme = GetToken( eol ) ;
-  while ( cin.peek() != EOF && token.lexeme != "exit" ) {
+  while ( cin.peek() != EOF && !exit ) {
+    token.tokenType = DefToken( token.lexeme ) ;
     walk -> tokenList.push_back( token ) ;
     if ( eol )  {
+      exit = IsExit( walk -> tokenList ) ;
       // assign line to a node of line
-      for ( int i = 0 ; i < walk -> tokenList.size() ; i++ ) {
-        cout << walk -> tokenList[i].lexeme ;
-      } // for
+      if ( !exit ) {
+        for ( int i = 0 ; i < walk -> tokenList.size() ; i++ ) {
+          cout << walk -> tokenList[i].lexeme ;
+        } // for
   
-      cout << endl ;
-      cout << "> " ;
-      walk -> next = new ANodeOfLine ;
-      walk = walk -> next ;
-      walk -> next = NULL ;
-      eol = false ;
+        cout << endl << endl ;
+        cout << "> " ;
+        walk -> next = new ANodeOfLine ;
+        walk = walk -> next ;
+        walk -> next = NULL ;
+        eol = false ;
+      } // if
     } // if
 
-    token.lexeme = GetToken( eol ) ;
+    if ( !exit )
+      token.lexeme = GetToken( eol ) ;
     // judge the token type
     // put token into tokenlist
-    // with the way to build tree(pretty print)
+    // build tree(pretty print)
   } // while
 } // ReadSExp()
 
@@ -109,13 +119,44 @@ string GetToken( bool &eol ) {
       SkipComment() ;
     } // if
 
-    token += ch ;
-    firstIsSprt = false ;
+    else {
+      token += ch ;
+      firstIsSprt = false ;
+    }  // else
   } // while
 
-  if ( firstIsSprt ) {
+  if ( firstIsSprt ) { 
     scanf( "%c", &ch ) ;
-    token += ch ;
+    if ( ch == ';' ) {
+      char comment[256] ;
+      cin.getline( comment, 256, '\n' ) ;
+    } // if
+
+    else if ( ch == '"' ) { // string
+      token += ch ;
+      bool endStr = false, findDoubleQuote = false ;
+      while ( !endStr ) { // get string
+        scanf( "%c", &ch ) ;
+        if ( ch == '"' ) {
+          token += ch ;
+          findDoubleQuote = true ;
+          endStr = true ;
+        } // if
+        
+        else if ( ch == '\n' ) {
+          endStr = true ;
+          // error:not have double quote
+        } // else if
+
+        else {
+          token += ch ;
+        } // else 
+      } // while
+    } // else if
+
+    else {
+      token += ch ;
+    } // else
   } // if
 
   if ( cin.peek() == '\n' ) {
@@ -166,6 +207,89 @@ void SkipComment() {
   char cStr[256] ;
   if ( !cin.get( cStr, 256, '\n' ) )
     cout << "error：last  line is comment\n" ;
-} // SkipComment
+} // SkipComment() 
+
+bool IsExit( vector<Token> tokenList ) {
+  if ( tokenList[0].lexeme == "(" ) {
+    if ( tokenList[1].lexeme == "exit" ) {
+      if ( tokenList[2].lexeme == ")" ) {
+        return true ;
+      } // if
+    } // if
+  } // if
+
+  return false ;
+} // IsExit()
+
+int DefToken( string lexeme ) {
+  if ( lexeme == "(" ) {
+    return LEFT_PAREN ;
+  } // if
+
+  else if ( lexeme == ")" ) {
+    return RIGHT_PAREN ;
+  } // else if
+
+  else if ( lexeme == "." ) {
+    return DOT ;
+  } // else if
+
+  else if ( lexeme[0] == '"' ) {
+    return STRING ;
+  } // else if
+
+  else if ( lexeme == "nil" || lexeme == "#f" ) {
+    return NIL ;
+  } // else if
+
+  else if ( lexeme == "t" || lexeme == "#t" ) {
+    return T ;
+  } // else if
+
+  else if ( lexeme == "'" || lexeme == "\"" ) {
+    return QUOTE ;
+  } // else if
+
+  else if ( IsNum( lexeme[0] ) || IsOperator( lexeme[0] ) || lexeme[0] == '.' ) { // int or float
+    for ( int i = 0 ; i < lexeme.size() ; i++ ) {
+      if ( lexeme[i] == '.' ) {
+        return FLOAT ;
+      } // if
+    } // for
+
+    return INT ;
+    // may have error 
+  } // else if
+
+  else { // symbol
+    return SYMBOL ;
+    // maybe have error 
+  } // else 
+} // DefToken()
+
+bool IsNum( char ch ) {
+  if ( ch >= '0' && ch <= '9' )
+    return true ;
+
+  return false ;
+} // IsNum()
+
+bool IsOperator( char ch ) {
+  if ( ch == '+' ) 
+    return true ;
+
+  else if ( ch == '-' )
+    return true ;
+
+  else if ( ch == '*' )
+    return true ;
+
+  else if ( ch == '/' )
+    return true ;
+
+  else 
+    return false ;
+} // IsOperator()
+
 
 
