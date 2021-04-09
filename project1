@@ -30,7 +30,7 @@ struct ANodeOfLine {
 
 typedef ANodeOfLine *ANodeOfLinePtr ;
 
-void ReadSExp( ANodeOfLinePtr &programHead ) ; 
+bool ReadSExp( ANodeOfLinePtr &programHead ) ; 
 string GetToken( bool &eol ) ; // return false if doesn't get token
 bool IsWhiteSpace( char ch ) ;
 bool IsSeparator( char ch ) ;
@@ -40,14 +40,24 @@ bool IsExit( vector<Token> tokenList ) ;
 int DefToken( string lexeme ) ;
 bool IsNum( char ch ) ;
 bool IsOperator( char ch ) ; // +,-,*,/
+void BuileTree( vector<Token> tokenList ) ;
+void HandleBackslash( string &token ) ;
 
 int main() {
+  bool haveExit = false ;
   ANodeOfLinePtr programHead ;
   scanf( "%d", &gTestNum ) ;
   cout << "Welcome to OurScheme!" ;
   cout << "\n\n" ;
   cout << "> " ;
-  ReadSExp( programHead ) ;
+  haveExit = ReadSExp( programHead ) ;
+  if ( haveExit ) {
+    cout << endl << "Thanks for using OurScheme!" ;
+  } // if
+
+  else {
+    // error END-OF-FILE encountered
+  } // else
   /*
   repeat
   
@@ -70,7 +80,7 @@ int main() {
   */
 } // main()
 
-void ReadSExp( ANodeOfLinePtr &programHead ) {
+bool ReadSExp( ANodeOfLinePtr &programHead ) {
   Token token ;
   programHead = new ANodeOfLine ;
   ANodeOfLinePtr walk = programHead ;
@@ -88,7 +98,7 @@ void ReadSExp( ANodeOfLinePtr &programHead ) {
       if ( !exit ) {
         for ( int i = 0 ; i < walk -> tokenList.size() ; i++ ) {
           cout << walk -> tokenList[i].lexeme ;
-        } // for
+        } // for // --------------------------------------------------------temp print 
   
         cout << endl << endl ;
         cout << "> " ;
@@ -105,6 +115,8 @@ void ReadSExp( ANodeOfLinePtr &programHead ) {
     // put token into tokenlist
     // build tree(pretty print)
   } // while
+
+  return exit ;
 } // ReadSExp()
 
 string GetToken( bool &eol ) {
@@ -137,7 +149,7 @@ string GetToken( bool &eol ) {
       bool endStr = false, findDoubleQuote = false ;
       while ( !endStr ) { // get string
         scanf( "%c", &ch ) ;
-        if ( ch == '"' ) {
+        if ( ch == '\"' ) {
           token += ch ;
           findDoubleQuote = true ;
           endStr = true ;
@@ -148,10 +160,16 @@ string GetToken( bool &eol ) {
           // error:not have double quote
         } // else if
 
+        else if ( ch == '\\' ) {
+          HandleBackslash( token ) ;
+        } // else if
+
         else {
           token += ch ;
         } // else 
       } // while
+
+      eol = true ;
     } // else if
 
     else {
@@ -162,6 +180,15 @@ string GetToken( bool &eol ) {
   if ( cin.peek() == '\n' ) {
     eol = true ;
   } // if
+
+  if ( token == "t" ) {
+    token = "#t" ;
+  } // if
+  
+  else if ( token == "#f" || ( token == "(" && cin.peek() == ')' ) ) {
+    scanf( "%c", &ch ) ;
+    token = "nil" ;
+  } // else if
 
   return token ;
 } // GetToken()
@@ -290,6 +317,33 @@ bool IsOperator( char ch ) {
   else 
     return false ;
 } // IsOperator()
+
+void HandleBackslash( string &token ) {
+  char ch = '\\' ;
+  if ( cin.peek() == '\"' ) {
+    scanf( "%c", &ch ) ;
+    token += ch ;
+  } // if
+
+  else if ( cin.peek() == '\\' ) {
+    scanf( "%c", &ch ) ;
+    token += ch ;
+  } // else if
+ 
+  else if ( cin.peek() == 'n' ) {
+    scanf( "%c", &ch ) ;
+    token += '\n' ;   
+  } // else if
+
+  else if ( cin.peek() == 't' ) {
+    scanf( "%c", &ch ) ;
+    token += '\t' ;
+  } // else if
+
+  else {
+    token += ch ;
+  } // else
+} // HandleBackslash()
 
 
 
