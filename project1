@@ -42,6 +42,7 @@ bool IsNum( char ch ) ;
 bool IsOperator( char ch ) ; // +,-,*,/
 void BuileTree( vector<Token> tokenList ) ;
 void HandleBackslash( string &token ) ;
+void PrintSExp( ANodeOfLinePtr head ) ;
 
 int main() {
   bool haveExit = false ;
@@ -96,12 +97,7 @@ bool ReadSExp( ANodeOfLinePtr &programHead ) {
       exit = IsExit( walk -> tokenList ) ;
       // assign line to a node of line
       if ( !exit ) {
-        for ( int i = 0 ; i < walk -> tokenList.size() ; i++ ) {
-          cout << walk -> tokenList[i].lexeme ;
-        } // for // --------------------------------------------------------temp print 
-  
-        cout << endl << endl ;
-        cout << "> " ;
+        PrintSExp( walk ) ;
         walk -> next = new ANodeOfLine ;
         walk = walk -> next ;
         walk -> next = NULL ;
@@ -301,7 +297,7 @@ bool IsNum( char ch ) {
   return false ;
 } // IsNum()
 
-bool IsOperator( char ch ) {
+bool IsOperator( char ch ) { // +,-,*,/
   if ( ch == '+' ) 
     return true ;
 
@@ -345,5 +341,26 @@ void HandleBackslash( string &token ) {
   } // else
 } // HandleBackslash()
 
+void PrintSExp( ANodeOfLinePtr head ) {
+  // BuildTree()
+  for ( int i = 0 ; i < head -> tokenList.size() ; i++ ) {
+    if ( head -> tokenList[i].tokenType == INT ) { // handle +123, +12.3, -5.6363
+      int tempInt = stoi( head -> tokenList[i].lexeme ) ;
+      cout << tempInt ;
+    } // if
+
+    else if ( head -> tokenList[i].tokenType == FLOAT ) { // +123.5,-5.6363,-9.2
+      float tempFloat = stof( head -> tokenList[i].lexeme ) ; 
+      printf( "%.3f", tempFloat ) ;
+    } // else if
+
+    else {
+      cout << head -> tokenList[i].lexeme ;
+    } // else
+  } // for // --------------------------------------------------------temp print 
+
+  cout << endl << endl ;
+  cout << "> " ;
+} // PrintSExp()
 
 
