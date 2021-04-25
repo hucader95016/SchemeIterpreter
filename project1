@@ -3,6 +3,7 @@
 # include <iostream>
 # include <stdlib.h>
 # include <vector>
+# include <stack>
 
 using namespace std ;
 
@@ -22,6 +23,15 @@ struct Token {
   int column ;
 } ; 
 
+struct TreeNode {
+  int tokenType ;
+  string lexeme ;   
+  // int line ;
+  int column ;
+  TreeNode *left ;
+  TreeNode *right ;
+} ; 
+
 struct ANodeOfLine {
   int line ;
   vector<Token> tokenList ;
@@ -29,6 +39,7 @@ struct ANodeOfLine {
 } ;
 
 typedef ANodeOfLine *ANodeOfLinePtr ;
+typedef TreeNode *TreeNodePtr ; // use to build token tree 
 
 bool ReadSExp( ANodeOfLinePtr &programHead ) ; 
 string GetToken( bool &eol ) ; // return false if doesn't get token
@@ -43,6 +54,16 @@ bool IsOperator( char ch ) ; // +,-,*,/
 void BuileTree( vector<Token> tokenList ) ;
 void HandleBackslash( string &token ) ;
 void PrintSExp( ANodeOfLinePtr head ) ;
+
+class TokenTree {
+  private :
+    TreeNodePtr head ;
+    stack parenthese ;
+    TreeNodePtr BuildRecursive( TreeNodePtr walk, Token token ) ; 
+
+  public :
+    TreeNodePtr BuildTokenTree( vector<Token> tokenList, int index ) ;
+} ;
 
 int main() {
   bool haveExit = false ;
@@ -133,11 +154,10 @@ string GetToken( bool &eol ) {
     }  // else
   } // while
 
-  if ( firstIsSprt ) { 
+  if ( firstIsSprt ) { // white-space, (, ), ', ", ;
     scanf( "%c", &ch ) ;
-    if ( ch == ';' ) {
-      char comment[256] ;
-      cin.getline( comment, 256, '\n' ) ;
+    if ( ch == ';' ) { // comment
+     SkipComment() ;
     } // if
 
     else if ( ch == '"' ) { // string
@@ -181,8 +201,10 @@ string GetToken( bool &eol ) {
     token = "#t" ;
   } // if
   
-  else if ( token == "#f" || ( token == "(" && cin.peek() == ')' ) ) {
-    scanf( "%c", &ch ) ;
+  else if ( token == "#f" || ( token == "(" && cin.peek() == ')' ) ) { // nil, #f
+    if ( cin.peek() == '(' ) // 讀掉')'
+      scanf( "%c", &ch ) ;
+
     token = "nil" ;
   } // else if
 
@@ -229,7 +251,7 @@ void SkipWhiteSpace() {
 void SkipComment() {
   char cStr[256] ;
   if ( !cin.get( cStr, 256, '\n' ) )
-    cout << "error：last  line is comment\n" ;
+    cout << "error：last line is comment\n" ;
 } // SkipComment() 
 
 bool IsExit( vector<Token> tokenList ) {
