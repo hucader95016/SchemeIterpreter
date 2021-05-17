@@ -23,13 +23,11 @@ struct Token {
   int column ;
 } ; 
 
-struct TreeNode {
-  int tokenType ;
-  string lexeme ;   
-  // int line ;
-  int column ;
-  TreeNode *left ;
-  TreeNode *right ;
+struct TokenTreeNode {
+  Token token ;  
+  bool internal ;
+  TokenTreeNode *left ;
+  TokenTreeNode *right ;
 } ; 
 
 struct ANodeOfLine {
@@ -39,7 +37,7 @@ struct ANodeOfLine {
 } ;
 
 typedef ANodeOfLine *ANodeOfLinePtr ;
-typedef TreeNode *TreeNodePtr ; // use to build token tree 
+typedef TokenTreeNode *TokenTreeNodePtr ; // use to build token tree 
 
 bool ReadSExp( ANodeOfLinePtr &programHead ) ; 
 string GetToken( bool &eol ) ; // return false if doesn't get token
@@ -57,17 +55,25 @@ void PrintSExp( ANodeOfLinePtr head ) ;
 
 class TokenTree {
   private :
-    TreeNodePtr head ;
-    stack parenthese ;
-    TreeNodePtr BuildRecursive( TreeNodePtr walk, Token token ) ; 
-
+    TokenTreeNodePtr head ;
+    int parentheseCount ;
+    
   public :
-    TreeNodePtr BuildTokenTree( vector<Token> tokenList, int index ) ;
+    void BuildTokenTree( vector<Token> tokenList ) ;
+    TokenTreeNodePtr GetTokenTree() {
+      return head ;
+    } // GetTokenTree()
+
+    void Reset() {
+      head = NULL ;
+      parentheseCount = 0 ;
+    } // Reset()
 } ;
 
 int main() {
   bool haveExit = false ;
-  ANodeOfLinePtr programHead ;
+  ANodeOfLinePtr programHead = NULL ;
+  programHead -> next = NULL ;
   scanf( "%d", &gTestNum ) ;
   cout << "Welcome to OurScheme!" ;
   cout << "\n\n" ;
@@ -106,7 +112,6 @@ bool ReadSExp( ANodeOfLinePtr &programHead ) {
   Token token ;
   programHead = new ANodeOfLine ;
   ANodeOfLinePtr walk = programHead ;
-  programHead -> next = NULL ;
   bool eol = false ; // END_OF_LINE
   bool exit = false ; 
 
@@ -128,8 +133,7 @@ bool ReadSExp( ANodeOfLinePtr &programHead ) {
 
     if ( !exit )
       token.lexeme = GetToken( eol ) ;
-    // judge the token type
-    // put token into tokenlist
+
     // build tree(pretty print)
   } // while
 
@@ -296,13 +300,25 @@ int DefToken( string lexeme ) {
   } // else if
 
   else if ( IsNum( lexeme[0] ) || IsOperator( lexeme[0] ) || lexeme[0] == '.' ) { // int or float
+    bool isFloat = false, haveADot = false ;
+    bool isSymbol = false ;
     for ( int i = 0 ; i < lexeme.size() ; i++ ) {
-      if ( lexeme[i] == '.' ) {
-        return FLOAT ;
+      if ( lexeme[i] == '.' && !haveADot ) {
+        isFloat = true ;
+        haveADot = true ;
       } // if
+
+      else if ( !IsNum( lexeme[i] ) ) {
+        isSymbol = true ;
+      } // else if
     } // for
 
-    return INT ;
+    if ( isSymbol )
+      return SYMBOL ;
+    else if ( isFloat )
+      return FLOAT ;
+    else 
+      return INT ;
     // may have error 
   } // else if
 
@@ -385,4 +401,139 @@ void PrintSExp( ANodeOfLinePtr head ) {
   cout << "> " ;
 } // PrintSExp()
 
+void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
+  // stack store every return token tree node
+  stack<TokenTreeNode> nodeS ;
+  TokenTreeNodePtr walk = head ;
+
+  for ( int i = 0 ; i < tokenList.size() ; i++ ) {
+    string keyStr = tokenList[i].lexeme ;
+    if ( keyStr == "(" ) {
+      parentheseCount++ ;
+
+      if ( walk == NULL ) {
+        walk = new TokenTreeNode ;
+        walk -> internal = true ;
+        walk -> left = NULL ;
+        walk -> right = NULL ;
+        nodeS.push( *walk ) ;
+        head = walk ;
+      } // if
+
+      else {
+        if ( walk -> left == NULL ) {
+          walk -> internal = true ;
+          walk -> left = new TokenTreeNode ;
+          walk = walk -> left ;
+          walk -> internal = false ;
+          walk -> left = NULL ;
+          walk -> right = NULL ;
+          nodeS.push( *walk ) ; 
+        } // if
+
+        else if ( walk -> right == NULL ) {
+          walk -> internal = true ;
+          walk -> right = new TokenTreeNode ;
+          walk = walk -> right ;
+          walk -> internal = false ;
+          walk -> left = NULL ;
+          walk -> right = NULL ;
+          nodeS.push( *walk ) ; 
+        } // else if 
+
+        else { // walk -> left && right != NULL 
+          TokenTreeNodePtr temp ;
+          temp = new TokenTreeNode ;
+          temp -> internal = true ;
+          temp -> left = walk -> right ;
+          temp -> right = NULL ;
+          walk -> right = temp ;
+          walk = walk -> right ;
+          // no need push into stack??
+        } // else
+      } // else
+    } // if
+
+    else if ( keyStr == ")" ) {
+      parentheseCount-- ;
+      nodeS.pop() ;
+      walk = &nodeS.top() ;
+    } // else if
+
+    else if ( keyStr == "." ) {
+      nodeS.pop() ;
+      walk = &nodeS.top() ;
+      if ( walk -> right != NULL ) {
+        TokenTreeNodePtr temp = new TokenTreeNode ;
+        temp -> internal = true ;
+        temp -> left = walk -> right ;
+        temp -> right = NULL ;
+        walk -> right = temp ;
+        walk = walk -> right ;
+        // no need push into stack??
+      } // if
+    } // else if
+
+    else {
+      if ( walk -> left == NULL ) {
+        walk -> left = new TokenTreeNode ;
+        walk = walk -> left ;
+        walk -> left = NULL ;
+        walk -> right = NULL ;
+        walk -> internal = false ;
+        walk -> token = tokenList[i] ;
+        nodeS.push( *walk ) ;
+      } // if
+
+      else if ( walk -> right == NULL ) {
+        walk -> right = new TokenTreeNode ;
+        walk = walk -> right ;
+        walk -> left = NULL ;
+        walk -> right = NULL ;
+        walk -> internal = false ;
+        walk -> token = tokenList[i] ;
+        nodeS.push( *walk ) ;
+      } // else if
+
+      else {
+        cout << "unexpected error\n" ;
+      } // else
+
+      if ( tokenList[i+1].tokenType == INT || tokenList[i+1].tokenType == FLOAT ||
+           tokenList[i+1].tokenType == SYMBOL ) {
+        Token tempToken ;
+        tempToken.lexeme = "." ;
+        tempToken.tokenType = DOT ;
+        tokenList.insert( tokenList.begin()+i+1, tempToken ) ;
+
+        tempToken.lexeme = "(" ;
+        tempToken.tokenType = LEFT_PAREN ;
+        tokenList.insert( tokenList.begin()+i+2, tempToken ) ;
+
+        tempToken.lexeme = "." ;
+        tempToken.tokenType = DOT ;
+        tokenList.insert( tokenList.begin()+i+4, tempToken ) ;
+
+        tempToken.lexeme = "nil" ;
+        tempToken.tokenType = NIL ;
+        tokenList.insert( tokenList.begin()+i+5, tempToken ) ;
+
+        tempToken.lexeme = ")" ;
+        tempToken.tokenType = RIGHT_PAREN ;
+        tokenList.insert( tokenList.begin()+i+6, tempToken ) ;
+      } // if 
+
+      else if ( tokenList[i-1].tokenType == LEFT_PAREN && tokenList[i+1].tokenType == RIGHT_PAREN ) {
+        Token tempToken ;
+        tempToken.lexeme = "." ;
+        tempToken.tokenType = DOT ;
+        tokenList.insert( tokenList.begin()+i+1, tempToken ) ;
+
+        tempToken.lexeme = "nil" ;
+        tempToken.tokenType = NIL ;
+        tokenList.insert( tokenList.begin()+i+2, tempToken ) ;
+      } // else if
+    } // else
+  } // for
+} // BuildTokenTree()
 
