@@ -33,6 +33,7 @@ struct TokenTreeNode {
 struct ANodeOfLine {
   int line ;
   vector<Token> tokenList ;
+  TokenTree tokenTree ;
   ANodeOfLine *next ;
 } ;
 
@@ -60,6 +61,7 @@ class TokenTree {
     
   public :
     void BuildTokenTree( vector<Token> tokenList ) ;
+    void PrintTokenTree( TokenTreeNodePtr head, TokenTreeNodePtr walk ) ;
     TokenTreeNodePtr GetTokenTree() {
       return head ;
     } // GetTokenTree()
@@ -111,6 +113,8 @@ int main() {
 bool ReadSExp( ANodeOfLinePtr &programHead ) {
   Token token ;
   programHead = new ANodeOfLine ;
+  programHead -> next = NULL ;
+  programHead -> tokenTree.Reset() ;
   ANodeOfLinePtr walk = programHead ;
   bool eol = false ; // END_OF_LINE
   bool exit = false ; 
@@ -123,10 +127,14 @@ bool ReadSExp( ANodeOfLinePtr &programHead ) {
       exit = IsExit( walk -> tokenList ) ;
       // assign line to a node of line
       if ( !exit ) {
+        if ( walk -> tokenList[0] == "(" ) 
+          walk -> tokenTree.BuildTokenTree( walk -> tokenList ) ;
+
         PrintSExp( walk ) ;
         walk -> next = new ANodeOfLine ;
         walk = walk -> next ;
         walk -> next = NULL ;
+        walk -> tokenTree.reset() ;
         eol = false ;
       } // if
     } // if
@@ -380,22 +388,28 @@ void HandleBackslash( string &token ) {
 } // HandleBackslash()
 
 void PrintSExp( ANodeOfLinePtr head ) {
-  // BuildTree()
-  for ( int i = 0 ; i < head -> tokenList.size() ; i++ ) {
-    if ( head -> tokenList[i].tokenType == INT ) { // handle +123, +12.3, -5.6363
-      int tempInt = stoi( head -> tokenList[i].lexeme ) ;
-      cout << tempInt ;
-    } // if
+  TokenTreeNodePtr tokenTreeWalk = head -> tokenTree.GetTokenTree() ;
+  if ( tokenTreeWalk != NULL ) {
+    //
+  } // if
 
-    else if ( head -> tokenList[i].tokenType == FLOAT ) { // +123.5,-5.6363,-9.2
-      float tempFloat = stof( head -> tokenList[i].lexeme ) ; 
-      printf( "%.3f", tempFloat ) ;
-    } // else if
+  else {
+    for ( int i = 0 ; i < head -> tokenList.size() ; i++ ) {
+      if ( head -> tokenList[i].tokenType == INT ) { // handle +123, +12.3, -5.6363
+        int tempInt = stoi( head -> tokenList[i].lexeme ) ;
+        cout << tempInt ;
+      } // if
 
-    else {
-      cout << head -> tokenList[i].lexeme ;
-    } // else
-  } // for // --------------------------------------------------------temp print 
+      else if ( head -> tokenList[i].tokenType == FLOAT ) { // +123.5,-5.6363,-9.2
+        float tempFloat = stof( head -> tokenList[i].lexeme ) ; 
+        printf( "%.3f", tempFloat ) ;
+      } // else if
+
+      else {
+        cout << head -> tokenList[i].lexeme ;
+      } // else
+    } // for // --------------------------------------------------------temp print 
+  } // else
 
   cout << endl << endl ;
   cout << "> " ;
@@ -537,3 +551,6 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
   } // for
 } // BuildTokenTree()
 
+void TokenTree :: PrintTokenTree( TokenTreeNodePtr head, TokenTreeNodePtr walk ) {
+
+} // PrintTokenTree()
