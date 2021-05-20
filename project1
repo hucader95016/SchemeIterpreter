@@ -79,7 +79,7 @@ void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spac
 void PrintTokenTree( TokenTreeNodePtr head ) ;
 void PreOrder( TokenTreeNodePtr head ) {
   if ( head == NULL ) {
-
+    //cout << "NULL\n" ;
   } // if
 
   else {
@@ -88,7 +88,9 @@ void PreOrder( TokenTreeNodePtr head ) {
     else
       cout << head -> token.lexeme << endl ;
 
+    //cout << "left:" ;
     PreOrder( head -> left ) ;
+    //cout << "right:" ;
     PreOrder( head -> right ) ;
   } // else
 } // PreOrder()
@@ -148,10 +150,12 @@ bool ReadSExp( ANodeOfLinePtr &programHead ) { // if there has a white space in 
     } // if
 
     walk -> tokenList.push_back( token ) ;
-    if ( walk -> tokenList[0].lexeme != "(" )
+    if ( walk -> tokenList[0].lexeme != "(" && walk -> tokenList[0].lexeme != "\'" ) {
       sExpEnd = true ;
+    } // if
 
     else {
+      eol = true ;
       if ( token.lexeme == "(" )
         parenCount++ ;
 
@@ -159,7 +163,7 @@ bool ReadSExp( ANodeOfLinePtr &programHead ) { // if there has a white space in 
         parenCount-- ;
       } // else if
 
-      if ( parenCount == 0 )
+      if ( parenCount == 0 && token.lexeme != "\'" )
         sExpEnd = true ;
     } // else
  
@@ -167,7 +171,7 @@ bool ReadSExp( ANodeOfLinePtr &programHead ) { // if there has a white space in 
       exit = IsExit( walk -> tokenList ) ;
       // assign line to a node of line
       if ( !exit ) {
-        if ( walk -> tokenList[0].lexeme == "(" ) {
+        if ( walk -> tokenList[0].lexeme == "(" || walk -> tokenList[0].lexeme == "\'" ) {
           walk -> tokenTree.BuildTokenTree( walk -> tokenList ) ;
         } // if
 
@@ -199,6 +203,8 @@ string GetToken( bool &eol ) {
     scanf( "%c", &ch ) ;
     if ( ch == ';' ) { // skip comment ;
       SkipComment() ;
+      if ( token == "" ) 
+        SkipWhiteSpace() ;
     } // if
 
     else {
@@ -209,11 +215,7 @@ string GetToken( bool &eol ) {
 
   if ( firstIsSprt ) { // (, ), ', ", ;
     scanf( "%c", &ch ) ;
-    if ( ch == ';' ) { // comment
-     SkipComment() ;
-    } // if
-
-    else if ( ch == '(' && cin.peek() == ')' ) { // () == nil, may have ( )
+    if ( ch == '(' && cin.peek() == ')' ) { // () == nil, may have ( )
       scanf( "%c", &ch ) ;
       token = "nil" ;
     } // else if
@@ -277,7 +279,7 @@ bool IsWhiteSpace( char ch ) { // ' ', '\n', '\t', end of file
     return false ; 
 } // IsWhiteSpace()
 
-bool IsSeparator( char ch ) { // white space, '(', ')', '\'', '\"', ';'
+bool IsSeparator( char ch ) { // white space, '(', ')', '\'', '\"', !!'; is seperator but return false here'
   if ( IsWhiteSpace( ch ) )
     return true ;
   else if ( ch == '(' )
@@ -288,8 +290,8 @@ bool IsSeparator( char ch ) { // white space, '(', ')', '\'', '\"', ';'
     return true ;
   else if ( ch == '\"' )
     return true ;
-  else if ( ch == ';' )
-    return true ;
+  /*else if ( ch == ';' )
+    return true ;*/ 
   else 
     return false ;
 } // IsSeparator()
@@ -305,8 +307,7 @@ void SkipWhiteSpace() {
 
 void SkipComment() {
   char cStr[256] ;
-  if ( !cin.get( cStr, 256, '\n' ) )
-    cout << "error¡Glast line is comment\n" ;
+  cin.get( cStr, 256, '\n' ) ;
 } // SkipComment() 
 
 bool IsExit( vector<Token> tokenList ) {
@@ -434,10 +435,10 @@ void PrintSExp( ANodeOfLinePtr head ) {
   TokenTreeNodePtr tokenTreeHead = head -> tokenTree.GetTokenTree() ;
   if ( tokenTreeHead != NULL ) {
     /*for ( int i = 0 ; i < head -> tokenList.size() ;i ++ ) {
-      cout << head -> tokenList[i].lexeme ;
+      cout << head -> tokenList[i].lexeme << endl ;
     } // for
     cout << endl ;*/
-    PreOrder( tokenTreeHead ) ;
+    // PreOrder( tokenTreeHead ) ;
     PrintTokenTree( tokenTreeHead ) ;
   } // if
 
@@ -467,8 +468,26 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
   // stack store every return token tree node
   stack<TokenTreeNodePtr> nodeS ;
   TokenTreeNodePtr walk = head ;
+  int i = 0 ;
+  if ( tokenList[0].lexeme == "\'" ) {
+    head = new TokenTreeNode ;
+    head -> right = NULL ;
+    head -> left = new TokenTreeNode ;
+    head -> internal = true ;
 
-  for ( int i = 0 ; i < tokenList.size() ; i++ ) {
+    nodeS.push( head ) ;
+
+    head -> left -> left = NULL ;
+    head -> left -> right = NULL ;
+    head -> left -> internal = false ;
+    head -> left -> token = tokenList[0] ;
+    head -> left -> token.lexeme = "quote" ;
+    walk = head -> left ;
+    nodeS.push( walk ) ;
+    i++ ;
+  } // if
+
+  for ( ; i < tokenList.size() ; i++ ) {
     string keyStr = tokenList[i].lexeme ;
     if ( keyStr == "(" ) {
       parentheseCount++ ;
@@ -481,6 +500,36 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
         nodeS.push( walk ) ;
         head = walk ;
       } // if
+
+      else if ( !walk -> internal ) {
+        nodeS.pop() ;
+        walk = nodeS.top() ;
+        if ( walk -> right != NULL )
+          cout << "unexpected error:line 489\n" ;
+
+        else {
+          Token tempToken ;
+          tempToken.lexeme = "nil" ;
+          tempToken.tokenType = NIL ;
+
+          walk -> right = new TokenTreeNode ;
+          walk = walk -> right ;
+          walk -> internal = true ;
+          walk -> left = new TokenTreeNode ;
+          walk -> right = new TokenTreeNode ; // put nil in the node
+
+          walk -> right -> left = NULL ; // put nil in the node
+          walk -> right -> right = NULL ; // put nil in the node
+          walk -> right -> token = tempToken ; // put nil in the node
+          walk -> right -> internal = false ; // put nil in the node
+ 
+          walk = walk -> left ;
+          walk -> internal = true ;
+          walk -> left = NULL ;
+          walk -> right = NULL ;
+          nodeS.push( walk ) ;
+        } // else
+      } // else if
 
       else {
         if ( walk -> left == NULL ) {
@@ -516,24 +565,22 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
 
     else if ( keyStr == ")" ) {
       if ( tokenList[i-1].lexeme == "(" ) {
-        /*Token tempToken ;
-        tempToken.lexeme = "nil" ;
-        tempToken.tokenType = NIL ;
-        tokenList.insert( tokenList.begin()+i, tempToken ) ;
-
-        tempToken.lexeme = "." ;
-        tempToken.tokenType = DOT ;
-        tokenList.insert( tokenList.begin()+i+1, tempToken ) ;
-
-        tempToken.lexeme = "nil" ;
-        tempToken.tokenType = NIL ;
-        tokenList.insert( tokenList.begin()+i+2, tempToken ) ;*/
-        cout << "unexpected error:line 531\n" ;
+        cout << "unexpected error:line 519\n" ;
       } // if
 
       parentheseCount-- ;
       nodeS.pop() ;
       walk = nodeS.top() ;
+      if ( walk ->  right == NULL ) {
+        Token tempToken ;
+        tempToken.lexeme = "nil" ;
+        tempToken.tokenType = NIL ;
+        walk -> right = new TokenTreeNode ;
+        walk -> right -> left = NULL ;
+        walk -> right -> right = NULL ;
+        walk -> right -> token = tempToken ;
+        walk -> right -> internal = false ;
+      } // if
     } // else if
 
     else if ( keyStr == "." ) {
@@ -555,7 +602,7 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
         nodeS.pop() ;
         walk = nodeS.top() ;
         if ( walk -> right != NULL ) {
-          cout << "unexpected error:line559\n" ;
+          cout << "unexpected error:line603\n" ;
           exit(0) ;
         } // if
 
@@ -565,14 +612,9 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
           walk -> internal = true ;
           walk -> left = new TokenTreeNode ;
 
-          if ( tokenList[i+1].tokenType == INT || tokenList[i+1].tokenType == FLOAT ||
-               tokenList[i+1].tokenType == SYMBOL ) {
-            nodeS.pop() ;
-            nodeS.push( walk ) ;
-            walk -> right = NULL ;
-          } // if
-
-          else {
+          // if ( tokenList[i+1].tokenType == INT || tokenList[i+1].tokenType == FLOAT ||
+          //      tokenList[i+1].tokenType == SYMBOL || tokenList[i+1].tokenType == NIL || tokenList[i+1].tokenType == DOT ) {
+          if ( tokenList[i+1].tokenType == RIGHT_PAREN ) {
             Token tempToken ;
             tempToken.lexeme = "nil" ;
             tempToken.tokenType = NIL ;
@@ -581,6 +623,12 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
             walk -> right -> right = NULL ;
             walk -> right -> token = tempToken ;
             walk -> right -> internal = false ;
+          } // if
+
+          else {
+            nodeS.pop() ;
+            nodeS.push( walk ) ;
+            walk -> right = NULL ;
           } // else
 
           walk = walk -> left ;
@@ -613,48 +661,8 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
       } // else if
 
       else {
-        cout << "unexpected error\n" ;
+        cout << "unexpected error:line616\n" ;
       } // else
-
-      /*if ( tokenList[i+1].tokenType == INT || tokenList[i+1].tokenType == FLOAT ||
-           tokenList[i+1].tokenType == SYMBOL ) {
-        Token tempToken ;
-        tempToken.lexeme = "." ;
-        tempToken.tokenType = DOT ;
-        tokenList.insert( tokenList.begin()+i+1, tempToken ) ;
-
-        tempToken.lexeme = "(" ;
-        tempToken.tokenType = LEFT_PAREN ;
-        tokenList.insert( tokenList.begin()+i+2, tempToken ) ;
-        /*if ( tokenList[i+4].tokenType == RIGHT_PAREN ) {
-          tempToken.lexeme = "." ;
-          tempToken.tokenType = DOT ;
-          tokenList.insert( tokenList.begin()+i+4, tempToken ) ;
-
-          tempToken.lexeme = "nil" ;
-          tempToken.tokenType = NIL ;
-          tokenList.insert( tokenList.begin()+i+5, tempToken ) ;
-
-          tempToken.lexeme = ")" ;
-          tempToken.tokenType = RIGHT_PAREN ;
-          tokenList.insert( tokenList.begin()+i+6, tempToken ) ; 
-        } // if
-      } // if 
-
-      else if ( tokenList[i-1].tokenType == LEFT_PAREN && tokenList[i+1].tokenType == RIGHT_PAREN ) {
-        Token tempToken ;
-        tempToken.lexeme = "." ;
-        tempToken.tokenType = DOT ;
-        tokenList.insert( tokenList.begin()+i+1, tempToken ) ;
-
-        tempToken.lexeme = "nil" ;
-        tempToken.tokenType = NIL ;
-        tokenList.insert( tokenList.begin()+i+2, tempToken ) ;
-        for ( int i = 0 ; i < tokenList.size() ; i++ ) {
-          cout << tokenList[i].lexeme ;
-        } // for
-exit(0) ;
-      } // else if*/
     } // else
   } // for
 } // BuildTokenTree()
@@ -670,15 +678,33 @@ void PrintTokenTree( TokenTreeNodePtr head ) {
   // PrintTokenTreeRecur( head, head -> right, spaceCount, false ) ;
 } // PrintTokenTree()
 
-void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spaceCount, bool first ) {
+void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spaceCount, bool first ) { 
   if ( walk == head ) {
+    bool firstBrace = false ;
     cout << "( " ;
-    PrintTokenTreeRecur( head, head -> left, spaceCount, true ) ;
-    if ( !( head -> right -> internal ) ) {
-      cout << "  .\n" ;
+    if ( head -> left -> internal ) {
+      cout << "( " ;
+      firstBrace = true ;
     } // if
 
-    PrintTokenTreeRecur( head, head -> right, spaceCount, false ) ;
+    PrintTokenTreeRecur( head, head -> left, spaceCount+1, true ) ;
+    if ( firstBrace ) {
+      cout << "  )\n" ; 
+    } // if 
+
+    if ( walk -> right -> internal ) {
+      if ( !( head -> right -> internal ) ) {
+        cout << "  .\n" ;
+      } // if
+
+      PrintTokenTreeRecur( head, head -> right, spaceCount, false ) ;
+    } // if
+
+    else {
+      if ( walk -> right -> token.tokenType != NIL )
+        PrintTokenTreeRecur( head, head -> right, spaceCount, false ) ;
+    } // else
+
     cout << ")" ;
   } // if
 
@@ -703,18 +729,34 @@ void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spac
     //     cout << space << token
     if ( walk -> internal ) {
       if ( walk -> left -> internal ) {
+        if ( !first ) {
+          for ( int i = 0 ; i < spaceCount ; i++ )
+            cout << "  " ;
+        } // if
+
         cout << "( " ;
         PrintTokenTreeRecur( head, walk -> left, spaceCount+1, true ) ;
-        PrintTokenTreeRecur( head, walk -> right, spaceCount+1, false ) ;
+
         for ( int i = 0 ; i < spaceCount ; i++ ) {
           cout << "  " ;
         } // for 
 
         cout << ")\n" ;
+
+        if ( !walk -> right -> internal ) {
+          if ( walk -> right -> token.tokenType != NIL ) {
+            PrintTokenTreeRecur( head, walk -> right, spaceCount, false ) ;
+          } // if
+        } // if
+ 
+        else {
+          PrintTokenTreeRecur( head, walk -> right, spaceCount, false ) ;
+        } // else
       } // if
 
       else {
-        PrintTokenTreeRecur( head, walk -> left, spaceCount, false ) ;
+        PrintTokenTreeRecur( head, walk -> left, spaceCount, first ) ;
+
         if ( walk -> right -> internal ) {
           PrintTokenTreeRecur( head, walk -> right, spaceCount, false ) ;
         } // if
@@ -739,7 +781,19 @@ void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spac
         } // for 
       } // if
 
-      cout << walk -> token.lexeme << endl ;
+      if ( walk -> token.tokenType == INT ) { // handle +123, +12.3, -5.6363
+        int tempInt = stoi( walk -> token.lexeme ) ;
+        cout << tempInt << endl ; 
+      } // if
+
+      else if ( walk -> token.tokenType == FLOAT ) { // +123.5,-5.6363,-9.2
+        float tempFloat = stof( walk -> token.lexeme ) ; 
+        printf( "%.3f\n", tempFloat ) ;
+      } // else if
+
+      else {
+        cout << walk -> token.lexeme << endl ;
+      } // else
     } // else 
   } // else
 } // PrintTokenTrtreeRecur()
