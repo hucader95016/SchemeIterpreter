@@ -4,22 +4,23 @@
 # include <stdlib.h>
 # include <vector>
 # include <stack>
+# include <sstream>
 
 using namespace std ;
-
-int gLine = 0 ; 
-int gColumn = 0 ;
-int gTestNum ;
 
 enum TokenType {
   INT, STRING, DOT, FLOAT, NIL,
   T, QUOTE, SYMBOL, LEFT_PAREN, RIGHT_PAREN 
 };
 
+enum NonTerminal {
+  ATOM, SEXP
+};
+
 struct Token {
   int tokenType ;
   string lexeme ;   
-  // int line ;
+  int line ;
   int column ;
 } ; 
 
@@ -34,39 +35,40 @@ typedef TokenTreeNode *TokenTreeNodePtr ; // use to build token tree
 
 class TokenTree {
   private :
-    TokenTreeNodePtr head ;
-    int parentheseCount ;
-    
+  TokenTreeNodePtr mHead ;
+  int mParentheseCount ;
+  void HandleQuoteTree( TokenTreeNodePtr &walk, Token quote ) ;
+
   public :
-    void BuildTokenTree( vector<Token> tokenList ) ;
-    TokenTreeNodePtr GetTokenTree() {
-      return head ;
-    } // GetTokenTree()
+  void BuildTokenTree( vector<Token> tokenList ) ;
+  TokenTreeNodePtr GetTokenTree() {
+    return mHead ;
+  } // GetTokenTree()
 
-    void Reset() {
-      head = NULL ;
-      parentheseCount = 0 ;
-    } // Reset()
+  void Reset() {
+    mHead = NULL ;
+    mParentheseCount = 0 ;
+  } // Reset()
 
-    void SetParenCount( int num ) {
-      parentheseCount = num ;
-    } // SetParenCount()
+  void SetParenCount( int num ) {
+    mParentheseCount = num ;
+  } // SetParenCount()
 } ;
 
-struct ANodeOfLine {
-  int line ;
+struct ANodeOfSExp {
   vector<Token> tokenList ;
   TokenTree tokenTree ;
-  ANodeOfLine *next ;
+  ANodeOfSExp *next ;
 } ;
 
-typedef ANodeOfLine *ANodeOfLinePtr ;
+typedef ANodeOfSExp *ANodeOfSExpPtr ;
 
-bool ReadSExp( ANodeOfLinePtr &programHead ) ; 
-string GetToken( bool &eol ) ; // return false if doesn't get token
+ANodeOfSExpPtr ReadSExp() ; 
+Token GetToken() ; // return false if doesn't get token
 bool IsWhiteSpace( char ch ) ;
 bool IsSeparator( char ch ) ;
 void SkipWhiteSpace() ;
+void Skip_sameLine() ;
 void SkipComment() ;
 bool IsExit( vector<Token> tokenList ) ;
 int DefToken( string lexeme ) ;
@@ -74,12 +76,12 @@ bool IsNum( char ch ) ;
 bool IsOperator( char ch ) ; // +,-,*,/
 void BuileTree( vector<Token> tokenList ) ;
 void HandleBackslash( string &token ) ;
-void PrintSExp( ANodeOfLinePtr head ) ;
+void PrintSExp( ANodeOfSExpPtr head ) ;
 void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spaceCount, bool first ) ;
 void PrintTokenTree( TokenTreeNodePtr head ) ;
 void PreOrder( TokenTreeNodePtr head ) {
   if ( head == NULL ) {
-    //cout << "NULL\n" ;
+
   } // if
 
   else {
@@ -88,27 +90,35 @@ void PreOrder( TokenTreeNodePtr head ) {
     else
       cout << head -> token.lexeme << endl ;
 
-    //cout << "left:" ;
     PreOrder( head -> left ) ;
-    //cout << "right:" ;
     PreOrder( head -> right ) ;
   } // else
 } // PreOrder()
+bool Atom() ;
+bool SExp() ;
+Token PeekToken() ;
+
+int gLine = 1 ; 
+int gColumn = 0 ;
+int gTestNum ;
+Token gBufferToken ;
 
 int main() {
   bool haveExit = false ;
-  ANodeOfLinePtr programHead = NULL ;
-  scanf( "%d", &gTestNum ) ;
+  ANodeOfSExpPtr programHead = NULL, walk = NULL ;
+  gBufferToken.lexeme = "" ;
+  scanf( "%d%c", &gTestNum ) ;
   cout << "Welcome to OurScheme!" ;
   cout << "\n\n" ;
   cout << "> " ;
-  haveExit = ReadSExp( programHead ) ;
+  walk = ReadSExp( programHead ) ;
   if ( haveExit ) {
     cout << endl << "Thanks for using OurScheme!" ;
   } // if
 
   else {
-    cout << "END-OF-LINE\n" ;// error END-OF-FILE encountered
+    cout << "ERROR (no more input) : END-OF-FILE encountered" ; // error END-OF-FILE encountered
+    cout << endl << "Thanks for using OurScheme!" ;
   } // else
   /*
   repeat
@@ -132,30 +142,51 @@ int main() {
   */
 } // main()
 
-bool ReadSExp( ANodeOfLinePtr &programHead ) { // if there has a white space in the end of input,program will see it as the same line 
-  Token token ;                                // fix it in function GetToken -> SkipWhiteSpace 
-  ANodeOfLinePtr walk = programHead ;
-  bool eol = false ; // END_OF_LINE
-  bool exit = false ; 
+ANodeOfSExpPtr ReadSExp() { // if there has a white space in the end of input
+//bool ReadSExp( ANodeOfSExpPtr &programHead ) { // if there has a white space in the end of input
+  Token token ;                                // program will see it as the same line 
+  ANodeOfSExpPtr walk = NULL ;          // fix it in function GetToken -> SkipWhiteSpace 
+  bool endOfToken = false ; // END_OF_LINE
+  bool exit_ = false ; 
   bool sExpEnd = false ;
   int parenCount = 0 ;
 
-  token.lexeme = GetToken( eol ) ;
-  while ( cin.peek() != EOF && !exit ) {
+  if ( Atom() ) { // ATOM
+    walk = new ANodeOfSExpPtr ;
+    walk.tokenTree.Reset() ;
+    wa
+  } // if
+
+  else if ( SExp() ) {
+
+  } // else if
+
+  else {
+    walk = NULL ;
+    cout << "Unbelieve error\n" ;
+  } // else
+
+  return walk ;
+  /*
+  token = GetToken( endOfToken ) ;
+  while ( ( token.lexeme != "" || cin.peek() != EOF ) && !exit_ ) {
     token.tokenType = DefToken( token.lexeme ) ;
     if ( programHead == NULL ) {
-      programHead = new ANodeOfLine ;
+      programHead = new ANodeOfSExp ;
       programHead -> next = NULL ;
       walk = programHead ;
+      walk -> tokenTree.Reset() ;
     } // if
 
     walk -> tokenList.push_back( token ) ;
     if ( walk -> tokenList[0].lexeme != "(" && walk -> tokenList[0].lexeme != "\'" ) {
       sExpEnd = true ;
+      if ( cin.peek() == '(' || cin.peek() == '\'' ) 
+        endOfToken = true ;
     } // if
 
     else {
-      eol = true ;
+      endOfToken = true ;
       if ( token.lexeme == "(" )
         parenCount++ ;
 
@@ -167,104 +198,137 @@ bool ReadSExp( ANodeOfLinePtr &programHead ) { // if there has a white space in 
         sExpEnd = true ;
     } // else
  
-    if ( eol && sExpEnd )  {
-      exit = IsExit( walk -> tokenList ) ;
+    if ( endOfToken && sExpEnd )  {
+      exit_ = IsExit( walk -> tokenList ) ;
       // assign line to a node of line
-      if ( !exit ) {
+      if ( !exit_ ) {
         if ( walk -> tokenList[0].lexeme == "(" || walk -> tokenList[0].lexeme == "\'" ) {
           walk -> tokenTree.BuildTokenTree( walk -> tokenList ) ;
         } // if
 
         PrintSExp( walk ) ;
-        walk -> next = new ANodeOfLine ;
+        walk -> next = new ANodeOfSExp ;
         walk = walk -> next ;
         walk -> next = NULL ;
         walk -> tokenTree.Reset() ;
-        eol = false ;
+        endOfToken = false ;
         sExpEnd = false ;
         parenCount = 0 ;
+        Skip_sameLine() ;
       } // if
     } // if
 
-    if ( !exit )
-      token.lexeme = GetToken( eol ) ;
+    if ( !exit_ ) {
+      token = GetToken( endOfToken ) ;
+    } // if
   } // while
 
-  return exit ;
+  return exit_ ;
+  */
 } // ReadSExp()
 
-string GetToken( bool &eol ) {
+Token GetToken() {
   char ch ;
-  string token = "" ;
-  bool firstIsSprt = true ;
-  eol = false ;
+  Token token ;
+  token.lexeme = "" ;
+  bool firstIsSprt = true, endOfToken ;
+  endOfToken = false ;
   SkipWhiteSpace() ;
+  token.line = gLine ;
+  token.column = gColumn ;
   while ( cin.peek() != EOF && !IsSeparator( cin.peek() ) ) {
     scanf( "%c", &ch ) ;
+    gColumn++ ;
     if ( ch == ';' ) { // skip comment ;
       SkipComment() ;
-      if ( token == "" ) 
+      if ( token.lexeme == "" ) {
         SkipWhiteSpace() ;
+        token.line = gLine ;
+        token.column = gColumn ;
+      } // if
     } // if
 
     else {
-      token += ch ;
+      token.lexeme += ch ;
       firstIsSprt = false ;
     }  // else
   } // while
 
-  if ( firstIsSprt ) { // (, ), ', ", ;
+  endOfToken = true ;
+
+  if ( cin.peek() != EOF && firstIsSprt ) { // (, ), ', ", ;
     scanf( "%c", &ch ) ;
-    if ( ch == '(' && cin.peek() == ')' ) { // () == nil, may have ( )
-      scanf( "%c", &ch ) ;
-      token = "nil" ;
-    } // else if
+    gColumn++ ;
+    if ( ch == '(' ) { // () == nil, may have ( )
+      while( cin.peek() == ' ' || cin.peek() == '\t' ) {
+        scanf( "%c", &ch ) ;
+        gColumn++ ;
+      } // while
+
+      if ( cin.peek() == ')' ) {
+        scanf( "%c", &ch ) ;
+        gColumn++ ;
+        token.lexeme = "nil" ;
+      } // if
+
+      else {
+        token.lexeme += '(' ;
+      } // else
+    } // if
 
     else if ( ch == '"' ) { // string
-      token += ch ;
+      token.lexeme += ch ;
+      bool error = false ;
       bool endStr = false, findDoubleQuote = false ;
       while ( !endStr ) { // get string
         scanf( "%c", &ch ) ;
+        gColumn++ ;
         if ( ch == '\"' ) {
-          token += ch ;
+          token.lexeme += ch ;
           findDoubleQuote = true ;
           endStr = true ;
         } // if
         
         else if ( ch == '\n' ) {
           endStr = true ;
+          printf( "ERROR (no closing quote) : END-OF-LINE encountered at Line %d Column %d\n", gLine, gColumn ) ;
+          token.lexeme = "" ;
+          Skip_sameLine() ;
+          gLine++ ;
+          gColumn = 0 ;
           // error:not have double quote
         } // else if
 
         else if ( ch == '\\' ) {
-          HandleBackslash( token ) ;
+          HandleBackslash( token.lexeme ) ;
         } // else if
 
         else {
-          token += ch ;
+          token.lexeme += ch ;
         } // else 
       } // while
 
-      eol = true ;
+      endOfToken = true ;
     } // else if
 
     else {
-      token += ch ;
+      token.lexeme += ch ;
     } // else
   } // if
 
   if ( cin.peek() == '\n' ) {
-    eol = true ;
+    endOfToken = true ;
   } // if
 
-  if ( token == "t" ) {
-    token = "#t" ;
+  if ( token.lexeme == "t" ) {
+    token.lexeme = "#t" ;
   } // if
   
-  else if ( token == "#f" ) { // nil, #f
-    token = "nil" ;
+  else if ( token.lexeme == "#f" ) { // nil, #f
+    token.lexeme = "nil" ;
   } // else if
 
+  token.tokenType = DefToken( token.lexeme ) ;
   return token ;
 } // GetToken()
 
@@ -279,7 +343,7 @@ bool IsWhiteSpace( char ch ) { // ' ', '\n', '\t', end of file
     return false ; 
 } // IsWhiteSpace()
 
-bool IsSeparator( char ch ) { // white space, '(', ')', '\'', '\"', !!'; is seperator but return false here'
+bool IsSeparator( char ch ) { // white space, '(', ')', '\'', '\"', ';' is seperator but return false here'
   if ( IsWhiteSpace( ch ) )
     return true ;
   else if ( ch == '(' )
@@ -290,8 +354,6 @@ bool IsSeparator( char ch ) { // white space, '(', ')', '\'', '\"', !!'; is sepe
     return true ;
   else if ( ch == '\"' )
     return true ;
-  /*else if ( ch == ';' )
-    return true ;*/ 
   else 
     return false ;
 } // IsSeparator()
@@ -300,14 +362,40 @@ void SkipWhiteSpace() {
   while ( cin.peek() != EOF && IsWhiteSpace( cin.peek() ) ) {
     char ch ;
     scanf( "%c", &ch ) ;
-    if ( ch == '\n' )
+    gColumn++ ;
+    if ( ch == '\n' ) {
       gLine++ ;
+      gColumn = 0 ;
+    } // if
   } // while
 } // SkipWhiteSpace()
+
+void Skip_sameLine() {
+  bool nextLine = false ;
+  while ( cin.peek() != EOF && IsWhiteSpace( cin.peek() ) && !nextLine ) {
+    char ch ;
+    scanf( "%c", &ch ) ;
+    gColumn++ ;
+    if ( ch == '\n' ) {
+      gLine = 1 ;
+      gColumn = 0 ;
+      nextLine = true ;
+    } // if
+  } // while
+
+  if ( !nextLine && cin.peek() == ';' ) {
+    char ch ;
+    SkipComment() ;
+    scanf( "%c", &ch ) ; // read '\n'
+    gLine = 1 ;
+    gColumn = 0 ;
+  } // if
+} // SkipWhiteSpace_sameLine()
 
 void SkipComment() {
   char cStr[256] ;
   cin.get( cStr, 256, '\n' ) ;
+  gColumn = 0 ;
 } // SkipComment() 
 
 bool IsExit( vector<Token> tokenList ) {
@@ -354,10 +442,19 @@ int DefToken( string lexeme ) {
   else if ( IsNum( lexeme[0] ) || IsOperator( lexeme[0] ) || lexeme[0] == '.' ) { // int or float
     bool isFloat = false, haveADot = false ;
     bool isSymbol = false ;
-    for ( int i = 0 ; i < lexeme.size() ; i++ ) {
+    int i = 0 ;
+    if ( lexeme[0] == '+' || lexeme[0] == '-' ) {
+      i++ ;
+      if ( lexeme.size() == 1 )
+        isSymbol = true ;
+    } // if
+
+    for ( ; i < lexeme.size() ; i++ ) {
       if ( lexeme[i] == '.' && !haveADot ) {
         isFloat = true ;
         haveADot = true ;
+        if ( lexeme.size() == 2 && !IsNum( lexeme[1-i] ) ) // +., -.
+          isSymbol = true ;
       } // if
 
       else if ( !IsNum( lexeme[i] ) ) {
@@ -406,6 +503,7 @@ bool IsOperator( char ch ) { // +,-,*,/
 
 void HandleBackslash( string &token ) {
   char ch = '\\' ;
+  gColumn++ ;
   if ( cin.peek() == '\"' ) {
     scanf( "%c", &ch ) ;
     token += ch ;
@@ -427,31 +525,39 @@ void HandleBackslash( string &token ) {
   } // else if
 
   else {
+    gColumn-- ;
     token += ch ;
   } // else
 } // HandleBackslash()
 
-void PrintSExp( ANodeOfLinePtr head ) {
+void PrintSExp( ANodeOfSExpPtr head ) {
   TokenTreeNodePtr tokenTreeHead = head -> tokenTree.GetTokenTree() ;
   if ( tokenTreeHead != NULL ) {
-    /*for ( int i = 0 ; i < head -> tokenList.size() ;i ++ ) {
+    /*
+    for ( int i = 0 ; i < head -> tokenList.size() ;i ++ ) {
       cout << head -> tokenList[i].lexeme << endl ;
     } // for
-    cout << endl ;*/
+    cout << endl ;
+    */
     // PreOrder( tokenTreeHead ) ;
     PrintTokenTree( tokenTreeHead ) ;
   } // if
 
   else {
     for ( int i = 0 ; i < head -> tokenList.size() ; i++ ) {
+      stringstream s1 ;
       if ( head -> tokenList[i].tokenType == INT ) { // handle +123, +12.3, -5.6363
-        int tempInt = stoi( head -> tokenList[i].lexeme ) ;
+        int tempInt ;
+        s1 << head -> tokenList[i].lexeme ;
+        s1 >> tempInt ;
         cout << tempInt ;
       } // if
 
       else if ( head -> tokenList[i].tokenType == FLOAT ) { // +123.5,-5.6363,-9.2
-        float tempFloat = stof( head -> tokenList[i].lexeme ) ; 
-        printf( "%.3f", tempFloat ) ;
+        float tempInt ;
+        s1 << head -> tokenList[i].lexeme ;
+        s1 >> tempInt ;
+        printf( "%.3f", tempInt ) ;
       } // else if
 
       else {
@@ -467,67 +573,51 @@ void PrintSExp( ANodeOfLinePtr head ) {
 void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
   // stack store every return token tree node
   stack<TokenTreeNodePtr> nodeS ;
-  TokenTreeNodePtr walk = head ;
-  int i = 0 ;
-  if ( tokenList[0].lexeme == "\'" ) {
-    head = new TokenTreeNode ;
-    head -> right = NULL ;
-    head -> left = new TokenTreeNode ;
-    head -> internal = true ;
-
-    nodeS.push( head ) ;
-
-    head -> left -> left = NULL ;
-    head -> left -> right = NULL ;
-    head -> left -> internal = false ;
-    head -> left -> token = tokenList[0] ;
-    head -> left -> token.lexeme = "quote" ;
-    walk = head -> left ;
-    nodeS.push( walk ) ;
-    i++ ;
-  } // if
-
-  for ( ; i < tokenList.size() ; i++ ) {
+  TokenTreeNodePtr walk = mHead ;
+  for ( int i = 0 ; i < tokenList.size() ; i++ ) {
     string keyStr = tokenList[i].lexeme ;
-    if ( keyStr == "(" ) {
-      parentheseCount++ ;
+    if ( keyStr == "(" || keyStr == "\'" ) {
+      mParentheseCount++ ;
 
-      if ( walk == NULL ) {
-        walk = new TokenTreeNode ;
-        walk -> internal = true ;
-        walk -> left = NULL ;
-        walk -> right = NULL ;
-        nodeS.push( walk ) ;
-        head = walk ;
+      if ( mHead == NULL ) {
+        mHead = new TokenTreeNode ;
+        mHead -> internal = true ;
+        mHead -> left = NULL ;
+        mHead -> right = NULL ;
+        walk = mHead ;
+        if ( keyStr != "\'" ) 
+          nodeS.push( walk ) ;
+        
+        else {
+          HandleQuoteTree( walk, tokenList[i] ) ;
+        } // else
+        
       } // if
 
       else if ( !walk -> internal ) {
         nodeS.pop() ;
         walk = nodeS.top() ;
+        nodeS.pop() ;
         if ( walk -> right != NULL )
-          cout << "unexpected error:line 489\n" ;
+          cout << "unexpected error:line 535\n" ;
 
         else {
-          Token tempToken ;
-          tempToken.lexeme = "nil" ;
-          tempToken.tokenType = NIL ;
-
           walk -> right = new TokenTreeNode ;
           walk = walk -> right ;
           walk -> internal = true ;
           walk -> left = new TokenTreeNode ;
-          walk -> right = new TokenTreeNode ; // put nil in the node
+          walk -> right = NULL ; 
+          nodeS.push( walk ) ;
 
-          walk -> right -> left = NULL ; // put nil in the node
-          walk -> right -> right = NULL ; // put nil in the node
-          walk -> right -> token = tempToken ; // put nil in the node
-          walk -> right -> internal = false ; // put nil in the node
- 
           walk = walk -> left ;
           walk -> internal = true ;
           walk -> left = NULL ;
           walk -> right = NULL ;
-          nodeS.push( walk ) ;
+          if ( keyStr != "\'" )  
+            nodeS.push( walk ) ;
+          else {
+            HandleQuoteTree( walk, tokenList[i] ) ;
+          } // else
         } // else
       } // else if
 
@@ -538,7 +628,11 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
           walk -> internal = true ;
           walk -> left = NULL ;
           walk -> right = NULL ;
-          nodeS.push( walk ) ; 
+          if ( keyStr != "\'" )
+            nodeS.push( walk ) ; 
+          else { // keyStr == "\'"
+            HandleQuoteTree( walk, tokenList[i] ) ;
+          } // else
         } // if
 
         else if ( walk -> right == NULL ) {
@@ -547,28 +641,50 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
           walk -> internal = true ;
           walk -> left = NULL ;
           walk -> right = NULL ;
-          nodeS.push( walk ) ; 
+          if ( keyStr != "\'" )
+            nodeS.push( walk ) ; 
+          else { // keyStr == "\'"
+            HandleQuoteTree( walk, tokenList[i] ) ;
+          } // else
         } // else if 
 
         else { // walk -> left != NULL && right != NULL 
-          TokenTreeNodePtr temp ;
-          temp = new TokenTreeNode ;
-          temp -> internal = true ;
-          temp -> left = walk -> right ;
-          temp -> right = NULL ;
-          walk -> right = temp ;
-          walk = walk -> right ;
-          // no need push into stack??
+          nodeS.pop() ;
+          walk = nodeS.top() ;
+          nodeS.pop() ;
+          if ( walk -> right == NULL ) {
+            walk -> right = new TokenTreeNode ;
+            walk = walk -> right ;
+
+            walk -> internal = true ;
+            walk -> left = new TokenTreeNode ;
+            walk -> right = NULL ;
+            nodeS.push( walk ) ; // may heve problem,can't back to head 
+
+            walk = walk -> left ;
+            walk -> internal = true ;
+            walk -> left = NULL ; 
+            walk -> right = NULL ;
+            if ( keyStr != "\'" )
+              nodeS.push( walk ) ;
+            else {
+              HandleQuoteTree( walk, tokenList[0] ) ;
+            } // else
+          } // if
+
+          else {
+            cout << "it's happening!!\n" ; // walk -> right != NULL 
+          } // else
         } // else
       } // else
     } // if
 
     else if ( keyStr == ")" ) {
       if ( tokenList[i-1].lexeme == "(" ) {
-        cout << "unexpected error:line 519\n" ;
+        cout << "unexpected error:line 602\n" ;
       } // if
 
-      parentheseCount-- ;
+      mParentheseCount-- ;
       nodeS.pop() ;
       walk = nodeS.top() ;
       if ( walk ->  right == NULL ) {
@@ -597,13 +713,12 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
       } // if
     } // else if
 
-    else {
+    else { // int, float, symbol
       if ( !walk -> internal ) { // may have a problem
         nodeS.pop() ;
         walk = nodeS.top() ;
         if ( walk -> right != NULL ) {
-          cout << "unexpected error:line603\n" ;
-          exit(0) ;
+          cout << "unexpected error:line639\n" ;
         } // if
 
         else {
@@ -612,8 +727,6 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
           walk -> internal = true ;
           walk -> left = new TokenTreeNode ;
 
-          // if ( tokenList[i+1].tokenType == INT || tokenList[i+1].tokenType == FLOAT ||
-          //      tokenList[i+1].tokenType == SYMBOL || tokenList[i+1].tokenType == NIL || tokenList[i+1].tokenType == DOT ) {
           if ( tokenList[i+1].tokenType == RIGHT_PAREN ) {
             Token tempToken ;
             tempToken.lexeme = "nil" ;
@@ -661,21 +774,53 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
       } // else if
 
       else {
-        cout << "unexpected error:line616\n" ;
+        nodeS.pop() ;
+        walk = nodeS.top() ;
+        nodeS.pop() ;
+        walk -> right = new TokenTreeNode ;
+        walk = walk -> right ;
+
+        walk -> internal = true ; 
+        walk -> left = new TokenTreeNode ;
+        walk -> right = NULL ;
+        nodeS.push( walk ) ;
+
+        walk = walk -> left ;
+        walk -> internal = false ;
+        walk -> left = NULL ;
+        walk -> right = NULL ;
+        walk -> token = tokenList[i] ;
+        nodeS.push( walk ) ;
       } // else
     } // else
   } // for
-} // BuildTokenTree()
+} // TokenTree::BuildTokenTree()
+
+void TokenTree :: HandleQuoteTree( TokenTreeNodePtr &walk, Token quote ) { 
+  walk -> left = new TokenTreeNode ; // now -> left = quote, right = new ;               
+
+  walk -> left -> left = NULL ; // put quote in
+  walk -> left -> right = NULL ;
+  walk -> left -> internal = false ;
+  walk -> left -> token = quote ;
+  walk -> left -> token.lexeme = "quote" ;
+
+  walk -> right = new TokenTreeNode ; // now -> right -> right = nil 
+  walk = walk -> right ;              // deal with quote node
+  walk -> left = NULL ;               // add internal node 
+  walk -> right = new TokenTreeNode ;
+  walk -> internal = true ;
+            
+  walk -> right -> left = NULL ; // put nil in 
+  walk -> right -> right = NULL ;
+  walk -> right -> internal = false ;
+  walk -> right -> token.lexeme = "nil" ;
+  walk -> right -> token.tokenType = NIL ;
+} // TokenTree::HandleQuoteTree()
 
 void PrintTokenTree( TokenTreeNodePtr head ) {
-  // cout << "( " ;
   int spaceCount = 1 ;
   PrintTokenTreeRecur( head, head, spaceCount, true ) ;
-  // if ( !( head -> right -> internal ) ) {
-  //   cout << "   .\n" ;
-  // } // if
-
-  // PrintTokenTreeRecur( head, head -> right, spaceCount, false ) ;
 } // PrintTokenTree()
 
 void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spaceCount, bool first ) { 
@@ -693,16 +838,14 @@ void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spac
     } // if 
 
     if ( walk -> right -> internal ) {
-      if ( !( head -> right -> internal ) ) {
-        cout << "  .\n" ;
-      } // if
-
       PrintTokenTreeRecur( head, head -> right, spaceCount, false ) ;
     } // if
 
     else {
-      if ( walk -> right -> token.tokenType != NIL )
+      if ( walk -> right -> token.tokenType != NIL ) {
+        cout << "  .\n" ;
         PrintTokenTreeRecur( head, head -> right, spaceCount, false ) ;
+      } // if
     } // else
 
     cout << ")" ;
@@ -745,6 +888,10 @@ void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spac
 
         if ( !walk -> right -> internal ) {
           if ( walk -> right -> token.tokenType != NIL ) {
+            for ( int i = 0 ; i < spaceCount ; i++ )
+              cout << "  " ;
+
+            cout << ".\n" ;
             PrintTokenTreeRecur( head, walk -> right, spaceCount, false ) ;
           } // if
         } // if
@@ -781,14 +928,19 @@ void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spac
         } // for 
       } // if
 
+      stringstream s1 ;
       if ( walk -> token.tokenType == INT ) { // handle +123, +12.3, -5.6363
-        int tempInt = stoi( walk -> token.lexeme ) ;
-        cout << tempInt << endl ; 
+        int tempInt ;
+        s1 << walk -> token.lexeme ;
+        s1 >> tempInt ;
+        cout << tempInt << endl ;
       } // if
 
       else if ( walk -> token.tokenType == FLOAT ) { // +123.5,-5.6363,-9.2
-        float tempFloat = stof( walk -> token.lexeme ) ; 
-        printf( "%.3f\n", tempFloat ) ;
+        float tempInt ;
+        s1 << walk -> token.lexeme ;
+        s1 >> tempInt ;
+        printf( "%.3f\n", tempInt ) ;
       } // else if
 
       else {
@@ -796,5 +948,74 @@ void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spac
       } // else
     } // else 
   } // else
-} // PrintTokenTrtreeRecur()
+} // PrintTokenTreeRecur()
+
+bool Atom() {
+  Token token = PeekToken() ;
+  if ( token.tokenType == SYMBOL || token.tokenType == INT || token.tokenType == FLOAT ||
+       token.tokenType == STRING || token.tokenType == NIL || token.tokenType == T ) {
+    gBufferToken.lexeme = "" ;
+    return true ;
+  } // if
+
+  return false ;
+} // Atom()
+
+bool SExp() {
+  Token token = PeekToken() ;
+  if ( Atom() ) {
+    return true ;
+  } // if
+
+  else if ( token.tokenType == LEFT_PAREN ) {
+    gBufferToken.lexeme = "" ;
+    if ( SExp() ) {
+      while ( SExp() ) {
+        ;
+      } // while
+
+      token = PeekToken() ;
+      if ( token.lexeme == "." ) {
+        gBufferToken.lexeme = "" ;
+        if ( SExp() ) {
+          return true ;
+        } // if
+
+        else {
+          return false ; 
+        } // else
+      } // if
+
+      else if ( token.lexeme == ")" ) {
+        gBufferToken.lexeme = "" ;
+        return true ;
+      } // else if
+
+      else {
+        return false ;
+      } // else 
+    } // if
+
+    else {
+      return false ;
+    } // else
+  } // else if 
+
+  else if ( token.tokenType == QUOTE ) {
+    gBufferToken.lexeme = "" ;
+    return SExp() ;
+  } // else if
+
+  else {
+    return false ;
+  } // else
+} // SExp()
+
+Token PeekToken() {
+  if ( gBufferToken.lexeme == "" ) {
+    gBufferToken = GetToken() ;
+  } // if
+
+  return gBufferToken ;
+} // PeekToken()
 
