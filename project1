@@ -8,13 +8,13 @@
 
 using namespace std ;
 
-int gLine = 1 ; 
-int gColumn = 0 ;
-int gTestNum ;
-
 enum TokenType {
   INT, STRING, DOT, FLOAT, NIL,
   T, QUOTE, SYMBOL, LEFT_PAREN, RIGHT_PAREN 
+};
+
+enum NonTerminal {
+  ATOM, SEXP
 };
 
 struct Token {
@@ -55,6 +55,15 @@ class TokenTree {
   } // SetParenCount()
 } ;
 
+class ErrorType {
+  public : 
+  int mLine ;
+  int mColumn ;
+  bool mEof ;
+  string mMessage ;
+  TokenTree mTokenTree ;
+};
+
 struct ANodeOfSExp {
   vector<Token> tokenList ;
   TokenTree tokenTree ;
@@ -63,14 +72,15 @@ struct ANodeOfSExp {
 
 typedef ANodeOfSExp *ANodeOfSExpPtr ;
 
-bool ReadSExp( ANodeOfSExpPtr &programHead ) ; 
-Token GetToken( bool &endOfToken ) ; // return false if doesn't get token
+ANodeOfSExpPtr ReadSExp( bool &isExit ) ; 
+Token GetToken() ; // return false if doesn't get token
 bool IsWhiteSpace( char ch ) ;
 bool IsSeparator( char ch ) ;
 void SkipWhiteSpace() ;
+void SkipWhiteSpace_special() ;
 void Skip_sameLine() ;
 void SkipComment() ;
-bool IsExit( vector<Token> tokenList ) ;
+bool IsExit( ANodeOfSExpPtr aNodeHead ) ;
 int DefToken( string lexeme ) ;
 bool IsNum( char ch ) ;
 bool IsOperator( char ch ) ; // +,-,*,/
@@ -95,115 +105,87 @@ void PreOrder( TokenTreeNodePtr head ) {
   } // else
 } // PreOrder()
 
+bool Atom( vector<Token> &tokenList ) ;
+bool SExp( vector<Token> &tokenList ) ;
+void SExpError_type1( ErrorType error_ ) ; // atom or '(' expected
+void SExpError_type2( ErrorType error_ ) ; // ')' expected
+Token PeekToken() ;
+
+int gLine = 1 ; 
+int gColumn = 1 ;
+int gTestNum ;
+Token gBufferToken ;
+
 int main() {
-  bool haveExit = false ;
-  ANodeOfSExpPtr programHead = NULL ;
-  scanf( "%d%c", &gTestNum ) ;
+  char ch ;
+  bool haveExit = false, eof = false ;
+  ANodeOfSExpPtr programHead = NULL, walk = NULL ;
+  gBufferToken.lexeme = "" ;
+  scanf( "%d%c", &gTestNum, &ch ) ;
   cout << "Welcome to OurScheme!" ;
-  cout << "\n\n" ;
-  cout << "> " ;
-  haveExit = ReadSExp( programHead ) ;
-  if ( haveExit ) {
-    cout << endl << "Thanks for using OurScheme!" ;
+  while ( !haveExit && !eof ) {
+    try {
+      if ( programHead == NULL ) {
+        programHead = ReadSExp( haveExit ) ;
+        programHead -> next = NULL ;
+        walk = programHead ;
+      } // if
+
+      else {
+        walk -> next = ReadSExp( haveExit ) ;
+        walk = walk -> next ;
+        walk -> next = NULL ;
+      } // else
+
+      cout << "\n> " ;
+      if ( !haveExit ) {
+        PrintSExp( walk ) ;
+        gLine = 1 ;
+        gColumn = 1 ;
+        SkipWhiteSpace_special() ;
+      } // if
+    } // try
+
+    catch ( ErrorType error_ ) {
+      gBufferToken.lexeme = "" ;
+      if ( error_.mEof )
+        eof = true ;
+
+      cout << "\n\n> " << error_.mMessage ;
+      Skip_sameLine() ;
+    } // catch
+  } // while
+
+  cout << "\nThanks for using OurScheme!" ;
+} // main()
+
+ANodeOfSExpPtr ReadSExp( bool &isExit ) { // if there has a white space in the end of input
+  ANodeOfSExpPtr walk = NULL ;          // program will see it as the same line 
+  vector<Token> tokenList ;             // fix it in function GetToken -> SkipWhiteSpace 
+
+  if ( SExp( tokenList ) ) { 
+    walk = new ANodeOfSExp ;
+    walk -> tokenTree.Reset() ;
+    walk -> tokenList = tokenList ;
+    // if ( walk -> tokenList[0].lexeme == "\'" || walk -> tokenList[0].lexeme == "(" ) {
+    walk -> tokenTree.BuildTokenTree( walk -> tokenList ) ;
+    isExit = IsExit( walk ) ;
+    // } // if
   } // if
 
   else {
-    cout << "ERROR (no more input) : END-OF-FILE encountered" ; // error END-OF-FILE encountered
-    cout << endl << "Thanks for using OurScheme!" ;
+    ErrorType error_ ;
+    SExpError_type1( error_ ) ;
   } // else
-  /*
-  repeat
-  
-    ReadSExp(expr);
-    
-    PrintSExp(expr); // You must "pretty print" this data structure.
-      
-    Print '> '
-    
-  until (OR (user entered '(exit)')
-            (END-OF-FILE encountered)
-        )
-  
-  if ( END-OF-FILE encountered ) // and NOT ?user entered '(exit)'?
-    Print 'ERROR (no more input) : END-OF-FILE encountered' 
 
-  Print '\n'
-  Print 'Thanks for using OurScheme!' // Doesn't matter whether there is an
-                                      // '\n' at the end
-  */
-} // main()
-
-bool ReadSExp( ANodeOfSExpPtr &programHead ) { // if there has a white space in the end of input
-  Token token ;                                // program will see it as the same line 
-  ANodeOfSExpPtr walk = programHead ;          // fix it in function GetToken -> SkipWhiteSpace 
-  bool endOfToken = false ; // END_OF_LINE
-  bool exit_ = false ; 
-  bool sExpEnd = false ;
-  int parenCount = 0 ;
-
-  token = GetToken( endOfToken ) ;
-  while ( ( token.lexeme != "" || cin.peek() != EOF ) && !exit_ ) {
-    token.tokenType = DefToken( token.lexeme ) ;
-    if ( programHead == NULL ) {
-      programHead = new ANodeOfSExp ;
-      programHead -> next = NULL ;
-      walk = programHead ;
-      walk -> tokenTree.Reset() ;
-    } // if
-
-    walk -> tokenList.push_back( token ) ;
-    if ( walk -> tokenList[0].lexeme != "(" && walk -> tokenList[0].lexeme != "\'" ) {
-      sExpEnd = true ;
-      if ( cin.peek() == '(' || cin.peek() == '\'' ) 
-        endOfToken = true ;
-    } // if
-
-    else {
-      endOfToken = true ;
-      if ( token.lexeme == "(" )
-        parenCount++ ;
-
-      else if ( token.lexeme == ")" ) {
-        parenCount-- ;
-      } // else if
-
-      if ( parenCount == 0 && token.lexeme != "\'" )
-        sExpEnd = true ;
-    } // else
- 
-    if ( endOfToken && sExpEnd )  {
-      exit_ = IsExit( walk -> tokenList ) ;
-      // assign line to a node of line
-      if ( !exit_ ) {
-        if ( walk -> tokenList[0].lexeme == "(" || walk -> tokenList[0].lexeme == "\'" ) {
-          walk -> tokenTree.BuildTokenTree( walk -> tokenList ) ;
-        } // if
-
-        PrintSExp( walk ) ;
-        walk -> next = new ANodeOfSExp ;
-        walk = walk -> next ;
-        walk -> next = NULL ;
-        walk -> tokenTree.Reset() ;
-        endOfToken = false ;
-        sExpEnd = false ;
-        parenCount = 0 ;
-        Skip_sameLine() ;
-      } // if
-    } // if
-
-    if ( !exit_ ) {
-      token = GetToken( endOfToken ) ;
-    } // if
-  } // while
-
-  return exit_ ;
+  return walk ;
 } // ReadSExp()
 
-Token GetToken( bool &endOfToken ) {
+Token GetToken() {
   char ch ;
   Token token ;
   token.lexeme = "" ;
-  bool firstIsSprt = true ;
+  bool firstIsSprt = true, endOfToken ;
   endOfToken = false ;
   SkipWhiteSpace() ;
   token.line = gLine ;
@@ -226,35 +208,31 @@ Token GetToken( bool &endOfToken ) {
     }  // else
   } // while
 
-  endOfToken = true ;
-
+  if ( cin.peek() == EOF && token.lexeme == "" ) {
+    ErrorType error_ ;
+    error_.mEof = true ;
+    error_.mMessage = "ERROR (no more input) : END-OF-FILE encountered" ;
+    throw ( error_ ) ;
+  } // if 
+  
   if ( cin.peek() != EOF && firstIsSprt ) { // (, ), ', ", ;
     scanf( "%c", &ch ) ;
     gColumn++ ;
-    if ( ch == '(' && cin.peek() == ')' ) { // () == nil, may have ( )
-      scanf( "%c", &ch ) ;
-      gColumn++ ;
-      token.lexeme = "nil" ;
+    if ( ch == '(' ) { // () == nil, may have ( )
+      token.lexeme += '(' ;
     } // if
 
     else if ( ch == '"' ) { // string
       token.lexeme += ch ;
-      bool endStr = false, findDoubleQuote = false ;
-      while ( !endStr ) { // get string
+      bool error_ = false ;
+      bool endStr = false ;
+      while ( !endStr && cin.peek() != '\n' ) {
         scanf( "%c", &ch ) ;
         gColumn++ ;
         if ( ch == '\"' ) {
           token.lexeme += ch ;
-          findDoubleQuote = true ;
           endStr = true ;
         } // if
-        
-        else if ( ch == '\n' ) {
-          endStr = true ;
-          gLine++ ;
-          gColumn = 0 ;
-          // error:not have double quote
-        } // else if
 
         else if ( ch == '\\' ) {
           HandleBackslash( token.lexeme ) ;
@@ -265,7 +243,24 @@ Token GetToken( bool &endOfToken ) {
         } // else 
       } // while
 
-      endOfToken = true ;
+      if ( !endStr ) {
+        endStr = true ;
+        stringstream s1, s2 ;
+        string tempStr, trans ;
+        ErrorType error_ ;
+        error_.mEof = false ;
+        error_.mLine = gLine ;
+        error_.mColumn = gColumn ;
+        s1 << error_.mLine ;
+        s1 >> trans ;
+        s2 << error_.mColumn ;
+        tempStr = "ERROR (no closing quote) : END-OF-LINE encountered at Line " + trans + " Column " ;
+        s2 >> trans ;
+        tempStr += trans ;
+        error_.mMessage = tempStr ;
+        throw error_ ;
+      } // if
+
     } // else if
 
     else {
@@ -285,6 +280,7 @@ Token GetToken( bool &endOfToken ) {
     token.lexeme = "nil" ;
   } // else if
 
+  token.tokenType = DefToken( token.lexeme ) ;
   return token ;
 } // GetToken()
 
@@ -321,49 +317,62 @@ void SkipWhiteSpace() {
     gColumn++ ;
     if ( ch == '\n' ) {
       gLine++ ;
-      gColumn = 0 ;
+      gColumn = 1 ;
     } // if
   } // while
 } // SkipWhiteSpace()
 
-void Skip_sameLine() {
-  bool nextLine = false ;
-  while ( cin.peek() != EOF && IsWhiteSpace( cin.peek() ) && !nextLine ) {
+void SkipWhiteSpace_special() { // use it after find a SExp
+  bool enterEncounter = false ;
+  while ( cin.peek() != EOF && IsWhiteSpace( cin.peek() ) && !enterEncounter ) {
     char ch ;
     scanf( "%c", &ch ) ;
     gColumn++ ;
     if ( ch == '\n' ) {
+      enterEncounter = true ;
       gLine = 1 ;
-      gColumn = 0 ;
-      nextLine = true ;
+      gColumn = 1 ;
     } // if
   } // while
 
-  if ( !nextLine && cin.peek() == ';' ) {
-    char ch ; 
-    SkipComment() ;
-    scanf( "%c", &ch ) ; // read '\n'
-    gLine = 1 ;
-    gColumn = 0 ;
+  if ( !enterEncounter && cin.peek() == ';' ) {
+    Skip_sameLine() ;
   } // if
-} // SkipWhiteSpace_sameLine()
+} // SkipWhiteSpace_special()
+
+void Skip_sameLine() { // use it when error encounter
+  char ch ;
+  if ( cin.peek() != '\n' ) {
+    char cStr[256] ;
+    cin.get( cStr, 256, '\n' ) ;
+  } // if
+
+  scanf( "%c", &ch ) ; // read '\\n'
+  gLine = 1 ;
+  gColumn = 1 ;
+} // Skip_sameLine()
 
 void SkipComment() {
   char cStr[256] ;
   cin.get( cStr, 256, '\n' ) ;
-  gColumn = 0 ;
+  gColumn = 1 ;
 } // SkipComment() 
 
-bool IsExit( vector<Token> tokenList ) {
-  if ( tokenList[0].lexeme == "(" ) {
-    if ( tokenList[1].lexeme == "exit" ) {
-      if ( tokenList[2].lexeme == ")" ) {
-        return true ;
+bool IsExit( ANodeOfSExpPtr aNodeHead ) {
+  TokenTreeNodePtr walk = aNodeHead -> tokenTree.GetTokenTree() ;
+  if ( walk == NULL || !walk -> internal )
+    return false ;
+
+  else {
+    if ( walk -> left -> internal == false && walk -> right -> internal == false ) {
+      if ( walk -> left -> token.lexeme == "exit" ) {
+        if ( walk -> right -> token.tokenType == NIL )
+          return true ;
       } // if
     } // if
-  } // if
 
-  return false ;
+    return false ;
+  } // else
 } // IsExit()
 
 int DefToken( string lexeme ) {
@@ -424,12 +433,12 @@ int DefToken( string lexeme ) {
       return FLOAT ;
     else 
       return INT ;
-    // may have error 
+    // may have error_ 
   } // else if
 
   else { // symbol
     return SYMBOL ;
-    // maybe have error 
+    // maybe have error_ 
   } // else 
 } // DefToken()
 
@@ -521,9 +530,6 @@ void PrintSExp( ANodeOfSExpPtr head ) {
       } // else
     } // for // --------------------------------------------------------temp print 
   } // else
-
-  cout << endl << endl ;
-  cout << "> " ;
 } // PrintSExp()
 
 void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
@@ -555,7 +561,7 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
         walk = nodeS.top() ;
         nodeS.pop() ;
         if ( walk -> right != NULL )
-          cout << "unexpected error:line 535\n" ;
+          cout << "unexpected error_:line 535\n" ;
 
         else {
           walk -> right = new TokenTreeNode ;
@@ -637,7 +643,7 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
 
     else if ( keyStr == ")" ) {
       if ( tokenList[i-1].lexeme == "(" ) {
-        cout << "unexpected error:line 602\n" ;
+        cout << "unexpected error_:line 602\n" ;
       } // if
 
       mParentheseCount-- ;
@@ -670,11 +676,26 @@ void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
     } // else if
 
     else { // int, float, symbol
-      if ( !walk -> internal ) { // may have a problem
+      if ( walk == NULL ) {
+        if ( mHead == NULL ) {
+          mHead = new TokenTreeNode ;
+          mHead -> internal = false ;
+          mHead -> left = NULL ;
+          mHead -> right = NULL ;
+          mHead -> token = tokenList[i] ;
+        } // if
+   
+        else {
+          cout << "imposible token tree error:line 685\n" ;
+          exit( 0 ) ;
+        } // else
+      } // if
+
+      else if ( !walk -> internal ) { // may have a problem
         nodeS.pop() ;
         walk = nodeS.top() ;
         if ( walk -> right != NULL ) {
-          cout << "unexpected error:line639\n" ;
+          cout << "unexpected error_:line639\n" ;
         } // if
 
         else {
@@ -780,7 +801,7 @@ void PrintTokenTree( TokenTreeNodePtr head ) {
 } // PrintTokenTree()
 
 void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spaceCount, bool first ) { 
-  if ( walk == head ) {
+  if ( walk == head && walk -> internal ) {
     bool firstBrace = false ;
     cout << "( " ;
     if ( head -> left -> internal ) {
@@ -804,7 +825,7 @@ void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spac
       } // if
     } // else
 
-    cout << ")" ;
+    cout << ")\n" ;
   } // if
 
   else if ( walk == NULL ) {
@@ -905,4 +926,133 @@ void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spac
     } // else 
   } // else
 } // PrintTokenTreeRecur()
+
+bool Atom( vector<Token> &tokenList ) {
+  Token token = PeekToken() ;
+  if ( token.tokenType == SYMBOL || token.tokenType == INT || token.tokenType == FLOAT ||
+       token.tokenType == STRING || token.tokenType == NIL || token.tokenType == T ) {
+    tokenList.push_back( token ) ;
+    gBufferToken.lexeme = "" ;
+    return true ;
+  } // if
+
+  else if ( token.tokenType == LEFT_PAREN ) {
+    int tempLine = token.line, tempColumn = token.column ;
+    SkipWhiteSpace() ;
+    if ( cin.peek() == ')' ) {
+      char ch ;
+      gBufferToken.lexeme = "" ;
+      scanf( "%c", &ch ) ;
+      
+      Token nilToken ;
+      nilToken.lexeme = "nil" ;
+      nilToken.line = tempLine ;
+      nilToken.column = tempColumn ;
+      nilToken.tokenType = NIL ;
+      tokenList.push_back( nilToken ) ;
+      return true ;
+    } // if
+  } // else if
+
+  return false ;
+} // Atom()
+
+bool SExp( vector<Token> &tokenList ) {
+  if ( Atom( tokenList ) ) {
+    return true ;
+  } // if
+
+  else if ( PeekToken().tokenType == LEFT_PAREN ) {
+    tokenList.push_back( PeekToken() ) ;
+    gBufferToken.lexeme = "" ;
+    if ( SExp( tokenList ) ) {
+      while ( SExp( tokenList ) ) {
+        ;
+      } // while
+
+      if ( PeekToken().lexeme == "." ) {
+        tokenList.push_back( PeekToken() ) ;
+        gBufferToken.lexeme = "" ;
+        if ( !SExp( tokenList ) ) {
+          tokenList.push_back( PeekToken() ) ;
+          ErrorType error_ ;
+          SExpError_type1( error_ ) ;
+          return false ;
+        } // if
+      } // if
+
+      if ( PeekToken().lexeme == ")" ) {
+        tokenList.push_back( PeekToken() ) ;
+        gBufferToken.lexeme = "" ;
+        return true ;
+      } // else if
+
+      else {
+        tokenList.push_back( PeekToken() ) ;
+        ErrorType error_ ;
+        SExpError_type2( error_ ) ;
+        return false ;
+      } // else 
+    } // if
+
+    else {
+      tokenList.push_back( PeekToken() ) ;
+      ErrorType error_ ;
+      SExpError_type1( error_ ) ;
+      return false ;
+    } // else
+  } // else if
+
+  else if ( PeekToken().tokenType == QUOTE ) {
+    tokenList.push_back( PeekToken() ) ;
+    gBufferToken.lexeme = "" ;
+    return SExp( tokenList ) ;
+  } // else if
+
+  else {
+    return false ;
+  } // else
+} // SExp()
+
+Token PeekToken() {
+  if ( gBufferToken.lexeme == "" ) {
+    gBufferToken = GetToken() ;
+  } // if
+
+  return gBufferToken ;
+} // PeekToken()
+
+void SExpError_type1( ErrorType error_ ) {
+  error_.mEof = false ;
+  error_.mLine = PeekToken().line ;
+  error_.mColumn = PeekToken().column ;
+  stringstream s1, s2 ;
+  string tempStr, trans ;
+  s1 << error_.mLine ;
+  s1 >> trans ;
+  s2 << error_.mColumn ;
+  tempStr = "ERROR (unexpected token) : atom or '(' expected when token at Line " + trans + " Column " ;
+  s2 >> trans ;
+  tempStr += trans + " is >>" + PeekToken().lexeme + "<<" ;
+  error_.mMessage = tempStr ;
+  // Skip_sameLine() ;
+  throw error_ ;
+} // SExpError_type1()
+
+void SExpError_type2( ErrorType error_ ) {
+  error_.mEof = false ;
+  error_.mLine = PeekToken().line ;
+  error_.mColumn = PeekToken().column ;
+  stringstream s1, s2 ;
+  string tempStr, trans ;
+  s1 << error_.mLine ;
+  s1 >> trans ;
+  s2 << error_.mColumn ;
+  tempStr = "ERROR (unexpected token) : ')' expected when token at Line " + trans + " Column " ;
+  s2 >> trans ;
+  tempStr += trans + " is >>" + PeekToken().lexeme + "<<" ;
+  error_.mMessage = tempStr ;
+  // Skip_sameLine() ;
+  throw error_ ;
+} // SExpError_type2()
 
