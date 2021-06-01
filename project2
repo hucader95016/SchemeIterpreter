@@ -1,0 +1,1356 @@
+# include <stdio.h>
+# include <string>
+# include <iostream>
+# include <stdlib.h>
+# include <vector>
+# include <stack>
+# include <sstream>
+# include <map>
+
+using namespace std ;
+
+enum TokenType {
+  INT, STRING, DOT, FLOAT, NIL,
+  T, QUOTE, SYMBOL, LEFT_PAREN, RIGHT_PAREN 
+};
+
+enum NonTerminal {
+  ATOM, SEXP
+};
+
+struct Token {
+  int tokenType ;
+  string lexeme ;   
+  int line ;
+  int column ;
+} ; 
+
+struct TokenTreeNode {
+  Token token ;  
+  bool internal ;
+  TokenTreeNode *left ;
+  TokenTreeNode *right ;
+} ; 
+
+typedef TokenTreeNode *TokenTreeNodePtr ; // use to build token tree 
+
+class TokenTree {
+  private :
+  TokenTreeNodePtr mHead ;
+  int mParentheseCount ;
+  void HandleQuoteTree( TokenTreeNodePtr &walk, Token quote ) ;
+
+  public :
+  void BuildTokenTree( vector<Token> tokenList ) ;
+  TokenTreeNodePtr GetTokenTree() {
+    return mHead ;
+  } // GetTokenTree()
+
+  void Reset() {
+    mHead = NULL ;
+    mParentheseCount = 0 ;
+  } // Reset()
+
+  void SetParenCount( int num ) {
+    mParentheseCount = num ;
+  } // SetParenCount()
+
+  void SetTokenTreeHead( TokenTreeNodePtr newHead ) {
+    mHead = newHead ;
+  } // SetTokenTreeHead()
+} ;
+
+class ErrorType {
+  public : 
+  int mLine ;
+  int mColumn ;
+  bool mEof ;
+  string mMessage ;
+  TokenTreeNodePtr mTokenTree ;
+
+  ErrorType() {
+    mEof = false ;
+    mMessage = "" ;
+    mTokenTree = NULL ;
+  } // ErrorType(
+};
+
+class DefineTable {
+  private :
+  map<string,TokenTreeNodePtr> mDefineTable ;
+  map<string,TokenTreeNodePtr> mPrimitive ;
+
+  public :
+  DefineTable() { // constructor 
+    vector<string> primitive = { "cons", "list", "quote", "define", "car", "cdr", "atom?", "pair?",
+                                 "list?", "null?", "integer?", "real?", "number?",
+                                 "string?", "boolean?", "symbol?", "+", "-", "*", "/", // in OurSchem, real? = number?
+                                 "not", "and", "or", ">", "<", ">=", "<=", "=", "string-append",
+                                 "string>?", "string<?", "string=?", "eqv?", "equal?", "begin",
+                                 "if", "cond", "clean-environment" } ;
+    /*
+    Token nilToken ;
+    nilToken.lexeme = "nil" ;
+    nilToken.tokenType = NIL ;
+    */
+
+    for ( int i = 0 ; i < primitive.size() ; i++ ) {
+      TokenTreeNodePtr head ;
+      head = new TokenTreeNode ;
+      head -> internal = false ;
+      head -> left = NULL ;
+      head -> right = NULL ;
+  
+      Token token ;
+      token.tokenType = SYMBOL ;
+      string preprocessStr = " #<procedure " ;
+      token.lexeme = preprocessStr + primitive[i] + ">" ;
+
+      head -> token = token ;
+      mPrimitive.insert( pair<string, TokenTreeNodePtr>( primitive[i], head ) ) ;
+    } // for 
+  } // DefineTable()
+
+  void BindingSymbol( string symbol, TokenTreeNodePtr tokenTreeHead ) {
+    if ( !tokenTreeHead -> internal && tokenTreeHead -> token.tokenType == SYMBOL ) { // binding is a symbol
+      map<string,TokenTreeNodePtr> :: iterator it_tokenTree ;
+      it_tokenTree = mDefineTable.find( tokenTreeHead -> token.lexeme ) ;
+      if ( it_tokenTree == mDefineTable.end() ) { // unbound symbol
+        ErrorType error_ ;
+        error_.mMessage = "ERROR (unbound symbol) : " + tokenTreeHead -> token.lexeme ;
+        throw error_ ;
+      } // if
+
+      else { // bounded symbol
+        tokenTreeHead = it_tokenTree -> second ;
+      } // else
+    } // if
+
+    map<string,TokenTreeNodePtr> :: iterator it_symbol ;
+    it_symbol = mDefineTable.find( symbol ) ;
+    if ( it_symbol == mDefineTable.end() ) { // undefine symbol
+      mDefineTable.insert( pair<string, TokenTreeNodePtr>( symbol, tokenTreeHead ) ) ;
+    } // if
+
+    else { // redefine symbol
+      it_symbol -> second = tokenTreeHead ;
+    } // else
+  } // DefineTable :: BindingSymbol
+
+  TokenTreeNodePtr GetSymbolTree( string symbol ) {
+    map<string,TokenTreeNodePtr> :: iterator it ;
+    it = mDefineTable.find( symbol ) ;
+    if ( it == mDefineTable.end() )
+      return NULL ;
+    else 
+      return it -> second ; 
+  } // DefineTable :: GetSymbolTree
+
+  TokenTreeNodePtr GetPrimitiveTree( string symbol ) {
+    map<string,TokenTreeNodePtr> :: iterator it ;
+    it = mPrimitive.find( symbol ) ;
+    if ( it == mPrimitive.end() )
+      return NULL ;
+    else 
+      return it -> second ; 
+  } // DefineTable :: GetSymbolTree
+
+  bool IsInternalFunc( string symbol ) { 
+    if ( GetPrimitiveTree( symbol ) != NULL )
+      return true ;
+
+    symbolTree = GetSymbolTree( symbol ) ;
+    if ( !symbolTree -> internal && GetPrimitiveTree( symbolTree -> token.lexeme ) != NULL )
+      return true ;
+
+    return false ;
+  } // IsInternalFunc()
+};
+
+struct ANodeOfSExp {
+  vector<Token> tokenList ;
+  TokenTree tokenTree ;
+  ANodeOfSExp *next ;
+} ;
+
+typedef ANodeOfSExp *ANodeOfSExpPtr ;
+
+ANodeOfSExpPtr ReadSExp( bool &isExit ) ; 
+Token GetToken() ; // return false if doesn't get token
+int DefToken( string lexeme ) ;
+void HandleBackslash( string &token ) ;
+
+bool IsWhiteSpace( char ch ) ;
+bool IsSeparator( char ch ) ;
+bool IsExit( ANodeOfSExpPtr aNodeHead ) ;
+bool IsNum( char ch ) ;
+bool IsOperator( char ch ) ; // +,-,*,/
+
+void SkipWhiteSpace() ;
+void SkipWhiteSpace_special() ;
+void Skip_sameLine() ;
+void SkipComment() ;
+
+void BuileTree( vector<Token> tokenList ) ;
+void PrintSExp( ANodeOfSExpPtr head ) ;
+void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spaceCount, bool first ) ;
+void PrintTokenTree( TokenTreeNodePtr head ) ;
+void PreOrder( TokenTreeNodePtr head ) {
+  if ( head == NULL ) {
+
+  } // if
+
+  else {
+    if ( head -> internal ) 
+      cout << "internal\n" ;
+    else
+      cout << head -> token.lexeme << endl ;
+
+    PreOrder( head -> left ) ;
+    PreOrder( head -> right ) ;
+  } // else
+} // PreOrder()
+
+bool Atom( vector<Token> &tokenList ) ;
+bool SExp( vector<Token> &tokenList ) ;
+Token PeekToken() ;
+
+void SExpError_type1( ErrorType error_ ) ; // atom or '(' expected
+void SExpError_type2( ErrorType error_ ) ; // ')' expected
+
+TokenTreeNodePtr EvalExp( TokenTreeNodePtr inExp ) ;
+bool IsList( TokenTreeNodePtr head ) ;
+bool Define( TokenTreeNodePtr head ) ;
+bool Cond( TokenTreeNodePtr head ) ;
+
+int gLine = 1 ; 
+int gColumn = 1 ;
+int gTestNum ;
+Token gBufferToken ;
+DefineTable gDefineTable ;
+
+int main() {
+  char ch ;
+  bool haveExit = false, eof = false ;
+  ANodeOfSExpPtr inExpListHead = NULL, inExpListWalk = NULL ;
+  ANodeOfSExpPtr resultExpListHead = NULL, resultExpListWalk = NULL ;
+  gBufferToken.lexeme = "" ;
+  scanf( "%d%c", &gTestNum, &ch ) ;
+  cout << "Welcome to OurScheme!" ;
+  while ( !haveExit && !eof ) {
+    try {
+      if ( inExpListHead == NULL ) {
+        inExpListHead = ReadSExp( haveExit ) ;
+        inExpListHead -> next = NULL ;
+        inExpListWalk = inExpListHead ;
+      } // if
+
+      else {
+        inExpListWalk -> next = ReadSExp( haveExit ) ;
+        inExpListWalk = inExpListWalk -> next ;
+        inExpListWalk -> next = NULL ;
+      } // else
+
+      if ( !haveExit ) {
+        // evalExp
+        // if evaluation error
+        //   then PrintEvaluationError() ;
+          
+        // else // no evaluation error
+        //   PrintSExp( resultSExp );
+        TokenTreeNodePtr tempTokenTreePtr = EvalExp( inExpListWalk -> tokenTree.GetTokenTree() ) ; // change token tree only
+        if ( resultExpListHead == NULL ) {
+          resultExpListHead = inExpListWalk ;
+          resultExpListHead -> tokenTree.SetTokenTreeHead( tempTokenTreePtr );
+          resultExpListHead -> next = NULL ;
+          resultExpListWalk = resultExpListHead ;
+        } // if
+  
+        else {
+          resultExpListWalk -> next = inExpListWalk ;
+          resultExpListWalk = resultExpListWalk -> next ;
+          resultExpListWalk -> tokenTree.SetTokenTreeHead( tempTokenTreePtr ) ;
+          resultExpListWalk -> next = NULL ;
+        } // else
+
+        cout << "\n> " ;
+        PrintSExp( resultExpListWalk ) ;
+        gLine = 1 ;
+        gColumn = 1 ;
+      } // if
+    } // try
+
+    catch ( ErrorType error_ ) {
+      gBufferToken.lexeme = "" ;
+      if ( error_.mEof )
+        eof = true ;
+
+      cout << "\n\n> " << error_.mMessage ;
+      if ( error_.mTokenTree != NULL )
+        PrintTokenTree( error_.mTokenTree ) ;
+
+      Skip_sameLine() ;
+    } // catch
+  } // while
+
+  cout << "\nThanks for using OurScheme!" ;
+} // main()
+
+ANodeOfSExpPtr ReadSExp( bool &isExit ) { // if there has a white space in the end of input
+  ANodeOfSExpPtr walk = NULL ;          // program will see it as the same line 
+  vector<Token> tokenList ;             // fix it in function GetToken -> SkipWhiteSpace 
+
+  if ( SExp( tokenList ) ) { 
+    walk = new ANodeOfSExp ;
+    walk -> tokenTree.Reset() ;
+    walk -> tokenList = tokenList ;
+    // if ( walk -> tokenList[0].lexeme == "\'" || walk -> tokenList[0].lexeme == "(" ) {
+    walk -> tokenTree.BuildTokenTree( walk -> tokenList ) ;
+    isExit = IsExit( walk ) ;
+    // } // if
+  } // if
+
+  else {
+    ErrorType error_ ;
+    SExpError_type1( error_ ) ;
+  } // else
+
+  return walk ;
+} // ReadSExp()
+
+Token GetToken() {
+  char ch ;
+  Token token ;
+  token.lexeme = "" ;
+  bool firstIsSprt = true, endOfToken ;
+  endOfToken = false ;
+  SkipWhiteSpace() ;
+  token.line = gLine ;
+  token.column = gColumn ;
+  while ( cin.peek() != EOF && !IsSeparator( cin.peek() ) ) {
+    scanf( "%c", &ch ) ;
+    gColumn++ ;
+    if ( ch == ';' ) { // skip comment ;
+      SkipComment() ;
+      if ( token.lexeme == "" ) {
+        SkipWhiteSpace() ;
+        token.line = gLine ;
+        token.column = gColumn ;
+      } // if
+    } // if
+
+    else {
+      token.lexeme += ch ;
+      firstIsSprt = false ;
+    }  // else
+  } // while
+
+  if ( cin.peek() == EOF && token.lexeme == "" ) {
+    ErrorType error_ ;
+    error_.mTokenTree = NULL ;
+    error_.mEof = true ;
+    error_.mMessage = "ERROR (no more input) : END-OF-FILE encountered" ;
+    throw ( error_ ) ;
+  } // if 
+  
+  if ( cin.peek() != EOF && firstIsSprt ) { // (, ), ', ", ;
+    scanf( "%c", &ch ) ;
+    gColumn++ ;
+    if ( ch == '(' ) { // () == nil, may have ( )
+      token.lexeme += '(' ;
+    } // if
+
+    else if ( ch == '"' ) { // string
+      token.lexeme += ch ;
+      bool error_ = false ;
+      bool endStr = false ;
+      while ( !endStr && cin.peek() != '\n' ) {
+        scanf( "%c", &ch ) ;
+        gColumn++ ;
+        if ( ch == '\"' ) {
+          token.lexeme += ch ;
+          endStr = true ;
+        } // if
+
+        else if ( ch == '\\' ) {
+          HandleBackslash( token.lexeme ) ;
+        } // else if
+
+        else {
+          token.lexeme += ch ;
+        } // else 
+      } // while
+
+      if ( !endStr ) {
+        endStr = true ;
+        stringstream s1, s2 ;
+        string tempStr, trans ;
+        ErrorType error_ ;
+        error_.mTokenTree = NULL ;
+        error_.mEof = false ;
+        error_.mLine = gLine ;
+        error_.mColumn = gColumn ;
+        s1 << error_.mLine ;
+        s1 >> trans ;
+        s2 << error_.mColumn ;
+        tempStr = "ERROR (no closing quote) : END-OF-LINE encountered at Line " + trans + " Column " ;
+        s2 >> trans ;
+        tempStr += trans ;
+        error_.mMessage = tempStr ;
+        throw error_ ;
+      } // if
+
+    } // else if
+
+    else {
+      token.lexeme += ch ;
+    } // else
+  } // if
+
+  if ( cin.peek() == '\n' ) {
+    endOfToken = true ;
+  } // if
+
+  if ( token.lexeme == "t" ) {
+    token.lexeme = "#t" ;
+  } // if
+  
+  else if ( token.lexeme == "#f" ) { // nil, #f
+    token.lexeme = "nil" ;
+  } // else if
+
+  token.tokenType = DefToken( token.lexeme ) ;
+  return token ;
+} // GetToken()
+
+bool IsWhiteSpace( char ch ) { // ' ', '\n', '\t', end of file
+  if ( ch == ' ' )
+    return true ;
+  else if ( ch == '\n' )
+    return true ;
+  else if ( ch == '\t' )
+    return true ;
+  else 
+    return false ; 
+} // IsWhiteSpace()
+
+bool IsSeparator( char ch ) { // white space, '(', ')', '\'', '\"', ';' is seperator but return false here'
+  if ( IsWhiteSpace( ch ) )
+    return true ;
+  else if ( ch == '(' )
+    return true ;
+  else if ( ch == ')' )
+    return true ;
+  else if ( ch == '\'' )
+    return true ;
+  else if ( ch == '\"' )
+    return true ;
+  else 
+    return false ;
+} // IsSeparator()
+
+void SkipWhiteSpace() {
+  while ( cin.peek() != EOF && IsWhiteSpace( cin.peek() ) ) {
+    char ch ;
+    scanf( "%c", &ch ) ;
+    gColumn++ ;
+    if ( ch == '\n' ) {
+      gLine++ ;
+      gColumn = 1 ;
+    } // if
+  } // while
+} // SkipWhiteSpace()
+
+void SkipWhiteSpace_special() { // use it after find a SExp
+  bool enterEncounter = false ;
+  while ( cin.peek() != EOF && IsWhiteSpace( cin.peek() ) && !enterEncounter ) {
+    char ch ;
+    scanf( "%c", &ch ) ;
+    gColumn++ ;
+    if ( ch == '\n' ) {
+      enterEncounter = true ;
+      gLine = 1 ;
+      gColumn = 1 ;
+    } // if
+  } // while
+
+  if ( !enterEncounter && cin.peek() == ';' ) {
+    Skip_sameLine() ;
+  } // if
+} // SkipWhiteSpace_special()
+
+void Skip_sameLine() { // use it when error encounter
+  char ch ;
+  if ( cin.peek() != '\n' ) {
+    char cStr[256] ;
+    cin.get( cStr, 256, '\n' ) ;
+  } // if
+
+  scanf( "%c", &ch ) ; // read '\\n'
+  gLine = 1 ;
+  gColumn = 1 ;
+} // Skip_sameLine()
+
+void SkipComment() {
+  char cStr[256] ;
+  cin.get( cStr, 256, '\n' ) ;
+  gColumn = 1 ;
+} // SkipComment() 
+
+bool IsExit( ANodeOfSExpPtr aNodeHead ) {
+  TokenTreeNodePtr walk = aNodeHead -> tokenTree.GetTokenTree() ;
+  if ( walk == NULL || !walk -> internal )
+    return false ;
+
+  else {
+    if ( walk -> left -> internal == false && walk -> right -> internal == false ) {
+      if ( walk -> left -> token.lexeme == "exit" ) {
+        if ( walk -> right -> token.tokenType == NIL )
+          return true ;
+      } // if
+    } // if
+
+    return false ;
+  } // else
+} // IsExit()
+
+int DefToken( string lexeme ) {
+  if ( lexeme == "(" ) {
+    return LEFT_PAREN ;
+  } // if
+
+  else if ( lexeme == ")" ) {
+    return RIGHT_PAREN ;
+  } // else if
+
+  else if ( lexeme == "." ) {
+    return DOT ;
+  } // else if
+
+  else if ( lexeme[0] == '"' ) {
+    return STRING ;
+  } // else if
+
+  else if ( lexeme == "nil" || lexeme == "#f" ) {
+    return NIL ;
+  } // else if
+
+  else if ( lexeme == "t" || lexeme == "#t" ) {
+    return T ;
+  } // else if
+
+  else if ( lexeme == "'" || lexeme == "\"" ) {
+    return QUOTE ;
+  } // else if
+
+  else if ( IsNum( lexeme[0] ) || IsOperator( lexeme[0] ) || lexeme[0] == '.' ) { // int or float
+    bool isFloat = false, haveADot = false ;
+    bool isSymbol = false ;
+    int i = 0 ;
+    if ( lexeme[0] == '+' || lexeme[0] == '-' ) {
+      i++ ;
+      if ( lexeme.size() == 1 )
+        isSymbol = true ;
+    } // if
+
+    for ( ; i < lexeme.size() ; i++ ) {
+      if ( lexeme[i] == '.' && !haveADot ) {
+        isFloat = true ;
+        haveADot = true ;
+        if ( lexeme.size() == 2 && !IsNum( lexeme[1-i] ) ) // +., -.
+          isSymbol = true ;
+      } // if
+
+      else if ( !IsNum( lexeme[i] ) ) {
+        isSymbol = true ;
+      } // else if
+    } // for
+
+    if ( isSymbol )
+      return SYMBOL ;
+    else if ( isFloat )
+      return FLOAT ;
+    else 
+      return INT ;
+    // may have error_ 
+  } // else if
+
+  else { // symbol
+    return SYMBOL ;
+    // maybe have error_ 
+  } // else 
+} // DefToken()
+
+bool IsNum( char ch ) {
+  if ( ch >= '0' && ch <= '9' )
+    return true ;
+
+  return false ;
+} // IsNum()
+
+bool IsOperator( char ch ) { // +,-,*,/
+  if ( ch == '+' ) 
+    return true ;
+
+  else if ( ch == '-' )
+    return true ;
+
+  else if ( ch == '*' )
+    return true ;
+
+  else if ( ch == '/' )
+    return true ;
+
+  else 
+    return false ;
+} // IsOperator()
+
+void HandleBackslash( string &token ) {
+  char ch = '\\' ;
+  gColumn++ ;
+  if ( cin.peek() == '\"' ) {
+    scanf( "%c", &ch ) ;
+    token += ch ;
+  } // if
+
+  else if ( cin.peek() == '\\' ) {
+    scanf( "%c", &ch ) ;
+    token += ch ;
+  } // else if
+ 
+  else if ( cin.peek() == 'n' ) {
+    scanf( "%c", &ch ) ;
+    token += '\n' ;   
+  } // else if
+
+  else if ( cin.peek() == 't' ) {
+    scanf( "%c", &ch ) ;
+    token += '\t' ;
+  } // else if
+
+  else {
+    gColumn-- ;
+    token += ch ;
+  } // else
+} // HandleBackslash()
+
+void PrintSExp( ANodeOfSExpPtr head ) {
+  TokenTreeNodePtr tokenTreeHead = head -> tokenTree.GetTokenTree() ;
+  if ( !tokenTreeHead -> internal ) {
+    if ( tokenTreeHead -> token.tokenType == SYMBOL ) {
+      TokenTreeNodePtr bindingHead = gDefineTable.GetSymbolTree( tokenTreeHead -> token.lexeme ) ;
+      if ( bindingHead == NULL ) {
+        ErrorType error_ ;
+        error_.mTokenTree = NULL ;
+        error_.mEof = false ;
+        error_.mMessage = "ERROR (unbound symbol) : " + tokenTreeHead -> token.lexeme ;
+        throw error_ ;
+      } // if
+
+      else {
+        PrintTokenTree( bindingHead ) ;
+      } // else
+    } // if
+  
+    else
+      PrintTokenTree( tokenTreeHead ) ;
+  } // if
+  /*if ( tokenTreeHead != NULL ) {
+    PrintTokenTree( tokenTreeHead ) ;
+  } // if
+
+  else {
+    for ( int i = 0 ; i < head -> tokenList.size() ; i++ ) {
+      stringstream s1 ;
+      if ( head -> tokenList[i].tokenType == INT ) { // handle +123, +12.3, -5.6363
+        int tempInt ;
+        s1 << head -> tokenList[i].lexeme ;
+        s1 >> tempInt ;
+        cout << tempInt ;
+      } // if
+
+      else if ( head -> tokenList[i].tokenType == FLOAT ) { // +123.5,-5.6363,-9.2
+        float tempInt ;
+        s1 << head -> tokenList[i].lexeme ;
+        s1 >> tempInt ;
+        printf( "%.3f", tempInt ) ;
+      } // else if
+
+      else {
+        cout << head -> tokenList[i].lexeme ;
+      } // else
+    } // for // --------------------------------------------------------temp print 
+  } // else*/
+} // PrintSExp()
+
+void TokenTree :: BuildTokenTree( vector<Token> tokenList ) {
+  // stack store every return token tree node
+  stack<TokenTreeNodePtr> nodeS ;
+  TokenTreeNodePtr walk = mHead ;
+  for ( int i = 0 ; i < tokenList.size() ; i++ ) {
+    string keyStr = tokenList[i].lexeme ;
+    if ( keyStr == "(" || keyStr == "\'" ) {
+      mParentheseCount++ ;
+
+      if ( mHead == NULL ) {
+        mHead = new TokenTreeNode ;
+        mHead -> internal = true ;
+        mHead -> left = NULL ;
+        mHead -> right = NULL ;
+        walk = mHead ;
+        if ( keyStr != "\'" ) 
+          nodeS.push( walk ) ;
+        
+        else {
+          HandleQuoteTree( walk, tokenList[i] ) ;
+        } // else
+        
+      } // if
+
+      else if ( !walk -> internal ) {
+        nodeS.pop() ;
+        walk = nodeS.top() ;
+        nodeS.pop() ;
+        if ( walk -> right != NULL )
+          cout << "unexpected error_:line 535\n" ;
+
+        else {
+          walk -> right = new TokenTreeNode ;
+          walk = walk -> right ;
+          walk -> internal = true ;
+          walk -> left = new TokenTreeNode ;
+          walk -> right = NULL ; 
+          nodeS.push( walk ) ;
+
+          walk = walk -> left ;
+          walk -> internal = true ;
+          walk -> left = NULL ;
+          walk -> right = NULL ;
+          if ( keyStr != "\'" )  
+            nodeS.push( walk ) ;
+          else {
+            HandleQuoteTree( walk, tokenList[i] ) ;
+          } // else
+        } // else
+      } // else if
+
+      else {
+        if ( walk -> left == NULL ) {
+          walk -> left = new TokenTreeNode ;
+          walk = walk -> left ;
+          walk -> internal = true ;
+          walk -> left = NULL ;
+          walk -> right = NULL ;
+          if ( keyStr != "\'" )
+            nodeS.push( walk ) ; 
+          else { // keyStr == "\'"
+            HandleQuoteTree( walk, tokenList[i] ) ;
+          } // else
+        } // if
+
+        else if ( walk -> right == NULL ) {
+          walk -> right = new TokenTreeNode ;
+          walk = walk -> right ;
+          walk -> internal = true ;
+          walk -> left = NULL ;
+          walk -> right = NULL ;
+          if ( keyStr != "\'" )
+            nodeS.push( walk ) ; 
+          else { // keyStr == "\'"
+            HandleQuoteTree( walk, tokenList[i] ) ;
+          } // else
+        } // else if 
+
+        else { // walk -> left != NULL && right != NULL 
+          nodeS.pop() ;
+          walk = nodeS.top() ;
+          nodeS.pop() ;
+          if ( walk -> right == NULL ) {
+            walk -> right = new TokenTreeNode ;
+            walk = walk -> right ;
+
+            walk -> internal = true ;
+            walk -> left = new TokenTreeNode ;
+            walk -> right = NULL ;
+            nodeS.push( walk ) ; // may heve problem,can't back to head 
+
+            walk = walk -> left ;
+            walk -> internal = true ;
+            walk -> left = NULL ; 
+            walk -> right = NULL ;
+            if ( keyStr != "\'" )
+              nodeS.push( walk ) ;
+            else {
+              HandleQuoteTree( walk, tokenList[0] ) ;
+            } // else
+          } // if
+
+          else {
+            cout << "it's happening!!\n" ; // walk -> right != NULL 
+          } // else
+        } // else
+      } // else
+    } // if
+
+    else if ( keyStr == ")" ) {
+      if ( tokenList[i-1].lexeme == "(" ) {
+        cout << "unexpected error_:line 602\n" ;
+      } // if
+
+      mParentheseCount-- ;
+      nodeS.pop() ;
+      walk = nodeS.top() ;
+      if ( walk ->  right == NULL ) {
+        Token tempToken ;
+        tempToken.lexeme = "nil" ;
+        tempToken.tokenType = NIL ;
+        walk -> right = new TokenTreeNode ;
+        walk -> right -> left = NULL ;
+        walk -> right -> right = NULL ;
+        walk -> right -> token = tempToken ;
+        walk -> right -> internal = false ;
+      } // if
+    } // else if
+
+    else if ( keyStr == "." ) {
+      nodeS.pop() ;
+      walk = nodeS.top() ;
+      if ( walk -> right != NULL ) {
+        TokenTreeNodePtr temp = new TokenTreeNode ;
+        temp -> internal = true ;
+        temp -> left = walk -> right ;
+        temp -> right = NULL ;
+        walk -> right = temp ;
+        walk = walk -> right ;
+        // no need push into stack??
+      } // if
+    } // else if
+
+    else { // int, float, symbol
+      if ( walk == NULL ) {
+        if ( mHead == NULL ) {
+          mHead = new TokenTreeNode ;
+          mHead -> internal = false ;
+          mHead -> left = NULL ;
+          mHead -> right = NULL ;
+          mHead -> token = tokenList[i] ;
+        } // if
+   
+        else {
+          cout << "imposible token tree error:line 685\n" ;
+          exit( 0 ) ;
+        } // else
+      } // if
+
+      else if ( !walk -> internal ) { // may have a problem
+        nodeS.pop() ;
+        walk = nodeS.top() ;
+        if ( walk -> right != NULL ) {
+          cout << "unexpected error_:line639\n" ;
+        } // if
+
+        else {
+          walk -> right = new TokenTreeNode ;
+          walk = walk -> right ;
+          walk -> internal = true ;
+          walk -> left = new TokenTreeNode ;
+
+          if ( tokenList[i+1].tokenType == RIGHT_PAREN ) {
+            Token tempToken ;
+            tempToken.lexeme = "nil" ;
+            tempToken.tokenType = NIL ;
+            walk -> right = new TokenTreeNode ;
+            walk -> right -> left = NULL ;
+            walk -> right -> right = NULL ;
+            walk -> right -> token = tempToken ;
+            walk -> right -> internal = false ;
+          } // if
+
+          else {
+            nodeS.pop() ;
+            nodeS.push( walk ) ;
+            walk -> right = NULL ;
+          } // else
+
+          walk = walk -> left ;
+          walk -> left = NULL ;
+          walk -> right = NULL ;
+          walk -> internal = false ;
+          walk -> token = tokenList[i] ;
+          nodeS.push( walk ) ;
+        } // else
+      } // if
+
+      else if ( walk -> left == NULL ) {
+        walk -> left = new TokenTreeNode ;
+        walk = walk -> left ;
+        walk -> left = NULL ;
+        walk -> right = NULL ;
+        walk -> internal = false ;
+        walk -> token = tokenList[i] ;
+        nodeS.push( walk ) ;
+      } // if
+
+      else if ( walk -> right == NULL ) {
+        walk -> right = new TokenTreeNode ;
+        walk = walk -> right ;
+        walk -> left = NULL ;
+        walk -> right = NULL ;
+        walk -> internal = false ;
+        walk -> token = tokenList[i] ;
+        nodeS.push( walk ) ;
+      } // else if
+
+      else {
+        nodeS.pop() ;
+        walk = nodeS.top() ;
+        nodeS.pop() ;
+        walk -> right = new TokenTreeNode ;
+        walk = walk -> right ;
+
+        walk -> internal = true ; 
+        walk -> left = new TokenTreeNode ;
+        walk -> right = NULL ;
+        nodeS.push( walk ) ;
+
+        walk = walk -> left ;
+        walk -> internal = false ;
+        walk -> left = NULL ;
+        walk -> right = NULL ;
+        walk -> token = tokenList[i] ;
+        nodeS.push( walk ) ;
+      } // else
+    } // else
+  } // for
+} // TokenTree::BuildTokenTree()
+
+void TokenTree :: HandleQuoteTree( TokenTreeNodePtr &walk, Token quote ) { 
+  walk -> left = new TokenTreeNode ; // now -> left = quote, right = new ;               
+
+  walk -> left -> left = NULL ; // put quote in
+  walk -> left -> right = NULL ;
+  walk -> left -> internal = false ;
+  walk -> left -> token = quote ;
+  walk -> left -> token.lexeme = "quote" ;
+
+  walk -> right = new TokenTreeNode ; // now -> right -> right = nil 
+  walk = walk -> right ;              // deal with quote node
+  walk -> left = NULL ;               // add internal node 
+  walk -> right = new TokenTreeNode ;
+  walk -> internal = true ;
+            
+  walk -> right -> left = NULL ; // put nil in 
+  walk -> right -> right = NULL ;
+  walk -> right -> internal = false ;
+  walk -> right -> token.lexeme = "nil" ;
+  walk -> right -> token.tokenType = NIL ;
+} // TokenTree::HandleQuoteTree()
+
+void PrintTokenTree( TokenTreeNodePtr head ) {
+  int spaceCount = 1 ;
+  PrintTokenTreeRecur( head, head, spaceCount, true ) ;
+} // PrintTokenTree()
+
+void PrintTokenTreeRecur( TokenTreeNodePtr head, TokenTreeNodePtr walk, int spaceCount, bool first ) { 
+  if ( walk == head && walk -> internal ) {
+    bool firstBrace = false ;
+    cout << "( " ;
+    if ( head -> left -> internal ) {
+      cout << "( " ;
+      firstBrace = true ;
+    } // if
+
+    PrintTokenTreeRecur( head, head -> left, spaceCount+1, true ) ;
+    if ( firstBrace ) {
+      cout << "  )\n" ; 
+    } // if 
+
+    if ( walk -> right -> internal ) {
+      PrintTokenTreeRecur( head, head -> right, spaceCount, false ) ;
+    } // if
+
+    else {
+      if ( walk -> right -> token.tokenType != NIL ) {
+        cout << "  .\n" ;
+        PrintTokenTreeRecur( head, head -> right, spaceCount, false ) ;
+      } // if
+    } // else
+
+    cout << ")\n" ;
+  } // if
+
+  else if ( walk == NULL ) {
+    ;
+  } // else if
+
+  else {
+    // if is internal node
+    //   if ( now -> left == internal )
+    //     recursive left,spaceCount+1
+    //     recursive right,spaceCount+1
+    //   else
+    //     recursive left,spaceCount
+    //     recursive right,spaceCount
+    //   return 
+
+    // else 
+    //   if is right is nil
+    //     cout << sapce << right_paren
+    //   else
+    //     cout << space << token
+    if ( walk -> internal ) {
+      if ( walk -> left -> internal ) {
+        if ( !first ) {
+          for ( int i = 0 ; i < spaceCount ; i++ )
+            cout << "  " ;
+        } // if
+
+        cout << "( " ;
+        PrintTokenTreeRecur( head, walk -> left, spaceCount+1, true ) ;
+
+        for ( int i = 0 ; i < spaceCount ; i++ ) {
+          cout << "  " ;
+        } // for 
+
+        cout << ")\n" ;
+
+        if ( !walk -> right -> internal ) {
+          if ( walk -> right -> token.tokenType != NIL ) {
+            for ( int i = 0 ; i < spaceCount ; i++ )
+              cout << "  " ;
+
+            cout << ".\n" ;
+            PrintTokenTreeRecur( head, walk -> right, spaceCount, false ) ;
+          } // if
+        } // if
+ 
+        else {
+          PrintTokenTreeRecur( head, walk -> right, spaceCount, false ) ;
+        } // else
+      } // if
+
+      else {
+        PrintTokenTreeRecur( head, walk -> left, spaceCount, first ) ;
+
+        if ( walk -> right -> internal ) {
+          PrintTokenTreeRecur( head, walk -> right, spaceCount, false ) ;
+        } // if
+
+        else {
+          if ( walk -> right -> token.tokenType != NIL ) {
+            for ( int i = 0 ; i < spaceCount ; i++ ) {
+              cout << "  " ;
+            } // for 
+
+            cout << ".\n" ;
+            PrintTokenTreeRecur( head, walk -> right, spaceCount, false ) ;
+          } // if 
+        } // else
+      } // else
+    } // if
+
+    else {
+      if ( !first ) {
+        for ( int i = 0 ; i < spaceCount ; i++ ) {
+          cout << "  " ;
+        } // for 
+      } // if
+
+      stringstream s1 ;
+      if ( walk -> token.tokenType == INT ) { // handle +123, +12.3, -5.6363
+        int tempInt ;
+        s1 << walk -> token.lexeme ;
+        s1 >> tempInt ;
+        cout << tempInt << endl ;
+      } // if
+
+      else if ( walk -> token.tokenType == FLOAT ) { // +123.5,-5.6363,-9.2
+        float tempInt ;
+        s1 << walk -> token.lexeme ;
+        s1 >> tempInt ;
+        printf( "%.3f\n", tempInt ) ;
+      } // else if
+
+      else {
+        cout << walk -> token.lexeme << endl ;
+      } // else
+    } // else 
+  } // else
+} // PrintTokenTreeRecur()
+
+bool Atom( vector<Token> &tokenList ) {
+  Token token = PeekToken() ;
+  if ( token.tokenType == SYMBOL || token.tokenType == INT || token.tokenType == FLOAT ||
+       token.tokenType == STRING || token.tokenType == NIL || token.tokenType == T ) {
+    tokenList.push_back( token ) ;
+    gBufferToken.lexeme = "" ;
+    return true ;
+  } // if
+
+  else if ( token.tokenType == LEFT_PAREN ) {
+    int tempLine = token.line, tempColumn = token.column ;
+    SkipWhiteSpace() ;
+    if ( cin.peek() == ')' ) {
+      char ch ;
+      gBufferToken.lexeme = "" ;
+      scanf( "%c", &ch ) ;
+      
+      Token nilToken ;
+      nilToken.lexeme = "nil" ;
+      nilToken.line = tempLine ;
+      nilToken.column = tempColumn ;
+      nilToken.tokenType = NIL ;
+      tokenList.push_back( nilToken ) ;
+      return true ;
+    } // if
+  } // else if
+
+  return false ;
+} // Atom()
+
+bool SExp( vector<Token> &tokenList ) {
+  if ( Atom( tokenList ) ) {
+    return true ;
+  } // if
+
+  else if ( PeekToken().tokenType == LEFT_PAREN ) {
+    tokenList.push_back( PeekToken() ) ;
+    gBufferToken.lexeme = "" ;
+    if ( SExp( tokenList ) ) {
+      while ( SExp( tokenList ) ) {
+        ;
+      } // while
+
+      if ( PeekToken().lexeme == "." ) {
+        tokenList.push_back( PeekToken() ) ;
+        gBufferToken.lexeme = "" ;
+        if ( !SExp( tokenList ) ) {
+          tokenList.push_back( PeekToken() ) ;
+          ErrorType error_ ;
+          SExpError_type1( error_ ) ;
+          return false ;
+        } // if
+      } // if
+
+      if ( PeekToken().lexeme == ")" ) {
+        tokenList.push_back( PeekToken() ) ;
+        gBufferToken.lexeme = "" ;
+        return true ;
+      } // else if
+
+      else {
+        tokenList.push_back( PeekToken() ) ;
+        ErrorType error_ ;
+        SExpError_type2( error_ ) ;
+        return false ;
+      } // else 
+    } // if
+
+    else {
+      tokenList.push_back( PeekToken() ) ;
+      ErrorType error_ ;
+      SExpError_type1( error_ ) ;
+      return false ;
+    } // else
+  } // else if
+
+  else if ( PeekToken().tokenType == QUOTE ) {
+    tokenList.push_back( PeekToken() ) ;
+    gBufferToken.lexeme = "" ;
+    return SExp( tokenList ) ;
+  } // else if
+
+  else {
+    return false ;
+  } // else
+} // SExp()
+
+Token PeekToken() {
+  if ( gBufferToken.lexeme == "" ) {
+    gBufferToken = GetToken() ;
+  } // if
+
+  return gBufferToken ;
+} // PeekToken()
+
+void SExpError_type1( ErrorType error_ ) {
+  error_.mTokenTree = NULL ;
+  error_.mEof = false ;
+  error_.mLine = PeekToken().line ;
+  error_.mColumn = PeekToken().column ;
+  stringstream s1, s2 ;
+  string tempStr, trans ;
+  s1 << error_.mLine ;
+  s1 >> trans ;
+  s2 << error_.mColumn ;
+  tempStr = "ERROR (unexpected token) : atom or '(' expected when token at Line " + trans + " Column " ;
+  s2 >> trans ;
+  tempStr += trans + " is >>" + PeekToken().lexeme + "<<" ;
+  error_.mMessage = tempStr ;
+  // Skip_sameLine() ;
+  throw error_ ;
+} // SExpError_type1()
+
+void SExpError_type2( ErrorType error_ ) {
+  error_.mTokenTree = NULL ;
+  error_.mEof = false ;
+  error_.mLine = PeekToken().line ;
+  error_.mColumn = PeekToken().column ;
+  stringstream s1, s2 ;
+  string tempStr, trans ;
+  s1 << error_.mLine ;
+  s1 >> trans ;
+  s2 << error_.mColumn ;
+  tempStr = "ERROR (unexpected token) : ')' expected when token at Line " + trans + " Column " ;
+  s2 >> trans ;
+  tempStr += trans + " is >>" + PeekToken().lexeme + "<<" ;
+  error_.mMessage = tempStr ;
+  // Skip_sameLine() ;
+  throw error_ ;
+} // SExpError_type2()
+
+TokenTreeNodePtr EvalExp( ANodeOfSExp inExp ) {
+  TokenTreeNodePtr inTokenTreeHead = inExp -> tokenTree.GetTokenTree() ;
+  if ( !inTokenTreeHead -> internal ) { // what is being evaluated is Atom
+    // if what is being evaluated is a symbol 
+    if ( inTokenTreeHead -> token.tokenType == SYMBOL ) {
+      // check whether it is bound to an S-expression or an internal function
+      // if unbound,ERROR (unbound symbol) : abc
+      TokenTreeNodePtr bindingTreeHead = gDefineTable.GetSymbolTree( inTokenTreeHead -> token.lexeme ) ;
+      if ( bindingTreeHead == NULL ) { 
+        ErrorType error_ ;
+        error_.mMessage = "ERROR (unbound symbol) : " + inTokenTreeHead -> token.lexeme ;
+      } // if
+ 
+      else { // else, return that S-expression or internal function (i.e., its binding)
+        return bindingTreeHead ;
+      } // else
+    } // if
+
+    // else if what is being evaluated is an atom but not a symbol
+    else {
+      return inTokenTreeHead ;
+    } // else
+  } // if
+
+  else { // ( inTokenTreeHead -> internal ) // what is being evaluated is (...)
+    // find first argument
+    TokenTreeNodePtr firstArg = NULL, walk = inTokenTreeHead -> left ;
+    bool toplevel = true ;
+    while ( walk -> internal ) { // may have situation like 'walk -> left -> left == first argument'
+      walk = walk -> left ;
+      toplevel = false ;
+    } // while
+
+    firstArg = walk ;
+    if ( !IsList( inTokenTreeHead ) ) {
+      ErrorType error_ ;
+      error_.mTokenTree = inTokenTreeHead ;
+      error_.mMessage = "ERROR (non-list) : " ;
+      throw error_ ;
+    } // if
+
+    else if ( firstArg -> token.tokenType != SYMBOL ) { // first argment is an Atom but not Symbol
+      ErrorType error_ ;
+      error_.mMessage = "ERROR (attempt to apply non-function) : " + firstArg -> token.lexeme ;
+      throw error_ ;
+    } // else 
+
+    else if ( firstArg -> token.tokenType == SYMBOL ) { // first argment is a Symbol
+      if ( gDefineTable.IsInternalFunc( firstArg -> token.lexeme ) ) { // if SYM is the name of a known function
+        sym = firstArg -> token.lexeme ;
+        if ( !toplevel && ( sym == "clean-environment" || sym == "define" || sym == "exit" ) ) {
+          ErrorType error_ ;
+          if ( sym == "clean-environment" )
+            sym = "CLEAN-ENVIRONMENT"
+          else if ( sym == "define" )
+            sym = "DEFINE" ;
+          else // sym == "exit"
+            sym = "EXIT" ;
+
+          error_.mMessage = "ERROR (level of " + sym + ")" ;
+          throw error_ ; 
+        } // if
+
+        else if ( sym == "define" || sym == "cond" ) {
+          // check format of exp
+          if ( Define() || Cond() ) { 
+
+          } // if
+
+          else {
+            ErrorType error_ ;
+            if ( sym == "define" )
+              sym = "DEFINE" ;
+            else 
+              sym = "COND" ;
+
+            error_.lexeme = "ERROR (" + sym + " format) : " ;
+            error_.mTokenTree = inTokenTreeHead ;
+            throw error_ ;
+          } // else
+        } // else if
+
+        else if ( sym == "if" || sym == "and" || sym == "or" ) {
+
+        } // else if
+
+        else { // SYM is a known function name 'abc', which is neither 
+               // 'define' nor 'let' nor 'cond' nor 'lambda'
+
+        } // else
+      } // if
+
+      else {
+        ErrorType error_ ;
+        TokenTreeNodePtr binding = gDefineTable.GetSymbolTree( firstArg -> token.lexeme ) ;
+        if ( binding == NULL ) 
+          error_.mMessage = "ERROR (unbound symbol) : " + firstArg -> token.lexeme ;
+        
+        else {
+          error_.mMessage = "ERROR (attempt to apply non-function) : " ;
+          error_.mTokenTree = binding ;
+        } // else
+
+        throw error_ ;
+      } // else
+    } // else if 
+
+    else { // first argment is (...) 
+      // evaluate (...) 
+    } // else if
+  } // else
+
+  // eval second argument
+} // EvalExp
+
+bool IsList( TokenTreeNodePtr head ) {
+  TokenTreeNodePtr walk = head ;
+  if ( !head -> internal )
+    return true ;
+
+  while ( walk -> right != NULL ) {
+    walk = walk -> right ;
+  } // while
+
+  if ( walk -> token.tokenType == NIL )
+    return true ;
+} // IsList()
+
+Token FindFirstArg( TokenTreeNodePtr head ) {
+  if ( head -> internal ) 
+    return FindFirstArg( head -> left ) ;
+
+  else 
+    return head -> token ;
+} // FindFirstArg()
+
+bool Define( TokenTreeNodePtr head ) { // error:level of define
+  TokenTreeNodePtr walk = head ;
+  walk = walk -> right ;
+  
+} // Define
+
+bool Cond( TokenTreeNodePtr head ) {
+
+} // Cond
