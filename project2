@@ -6,6 +6,7 @@
 # include <stack>
 # include <sstream>
 # include <map>
+# include <iomanip>
 
 using namespace std ;
 
@@ -82,6 +83,7 @@ class ErrorType {
   int mLine ;
   int mColumn ;
   bool mEof ;
+  bool mSkip ;
   string mMessage ;
   TokenTreeNodePtr mTokenTree ;
 
@@ -89,6 +91,7 @@ class ErrorType {
     mEof = false ;
     mMessage = "" ;
     mTokenTree = NULL ;
+    mSkip = false ;
   } // ErrorType()
 };
 
@@ -104,7 +107,7 @@ class DefineTable {
                          "string?", "boolean?", "symbol?", "+", "-", "*", "/", // in OurSchem,real? = number?
                          "not", "and", "or", ">", "<", ">=", "<=", "=", "string-append",
                          "string>?", "string<?", "string=?", "eqv?", "equal?", "begin",
-                         "if", "cond", "clean-environment" } ;
+                         "if", "cond", "clean-environment", "exit" } ;
 
     for ( int i = 0 ; i < 100 ; i++ ) {
       if ( temp[i] != "" )
@@ -231,7 +234,7 @@ void SExpError_type2( ErrorType error_ ) ; // ')' expected
 // --------------------------------------------syntax analysis & error check end
 // --------------------------------------------------------------------project2 
 // evaluate start
-TokenTreeNodePtr EvalExp( TokenTreeNodePtr inTokenTreeHead ) ;
+TokenTreeNodePtr EvalExp( TokenTreeNodePtr inTokenTreeHead, bool topFunc ) ;
 TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) ;
 
 Token FindFirstArg( TokenTreeNodePtr head, bool &topLevel ) ;
@@ -292,16 +295,14 @@ int main() {
           
         // else // no evaluation error
         //   PrintSExp( resultSExp );
-        TokenTreeNodePtr resultTokenTreeHead = EvalExp( inExpListWalk -> tokenTree.GetTokenTree() ) ;
+        TokenTreeNodePtr resultTokenTreeHead = EvalExp( inExpListWalk -> tokenTree.GetTokenTree(), true ) ;
         if ( resultTokenTreeHead == NULL ) { // change token tree only
-          gLine = 1 ;
-          gColumn = 1 ; 
+          SkipWhiteSpace_special() ;
         } // if
 
         else {
           PrintSExp( inExpListWalk, resultTokenTreeHead ) ;
-          gLine = 1 ;
-          gColumn = 1 ;
+          SkipWhiteSpace_special() ;
         } // else
       } // if
     } // try
@@ -320,7 +321,11 @@ int main() {
         else 
           cout << endl ;
 
-        Skip_sameLine() ;
+        if ( error_.mSkip ) 
+          Skip_sameLine() ;
+        else {
+          SkipWhiteSpace_special() ;
+        } // else          
       } // else
     } // catch
   } // while
@@ -429,6 +434,7 @@ Token GetToken() {
         s2 >> trans ;
         tempStr += trans ;
         error_.mMessage = tempStr ;
+        error_.mSkip = true ;
         throw error_ ;
       } // if
     } // else if
@@ -493,6 +499,8 @@ void SkipWhiteSpace() {
 } // SkipWhiteSpace()
 
 void SkipWhiteSpace_special() { // use it after find a SExp
+  gLine = 1 ;
+  gColumn = 1 ;
   bool enterEncounter = false ;
   while ( cin.peek() != EOF && IsWhiteSpace( cin.peek() ) && !enterEncounter ) {
     char ch ;
@@ -1175,7 +1183,7 @@ void SExpError_type1( ErrorType error_ ) {
   s2 >> trans ;
   tempStr += trans + " is >>" + PeekToken().lexeme + "<<" ;
   error_.mMessage = tempStr ;
-  // Skip_sameLine() ;
+  error_.mSkip = true ;
   throw error_ ;
 } // SExpError_type1()
 
@@ -1193,11 +1201,11 @@ void SExpError_type2( ErrorType error_ ) {
   s2 >> trans ;
   tempStr += trans + " is >>" + PeekToken().lexeme + "<<" ;
   error_.mMessage = tempStr ;
-  // Skip_sameLine() ;
+  error_.mSkip = true ;
   throw error_ ;
 } // SExpError_type2()
 
-TokenTreeNodePtr EvalExp( TokenTreeNodePtr inTokenTreeHead ) {
+TokenTreeNodePtr EvalExp( TokenTreeNodePtr inTokenTreeHead, bool topFunc ) {
   if ( !inTokenTreeHead -> internal ) { // what is being evaluated is Atom
     // if what is being evaluated is a symbol 
     if ( inTokenTreeHead -> token.tokenType == SYMBOL ) {
@@ -1236,6 +1244,15 @@ TokenTreeNodePtr EvalExp( TokenTreeNodePtr inTokenTreeHead ) {
     // first argment is an Atom but not Symbol
     else if ( firstArg.tokenType != SYMBOL && firstArg.tokenType != PRIMITIVE ) { 
       ErrorType error_ ;
+      if ( firstArg.tokenType == FLOAT ) {
+        stringstream s1, s2 ; 
+        float temp ;
+        s1 << firstArg.lexeme ;
+        s1 >> temp ;
+        s2 << fixed << setprecision( 3 ) << temp ;
+        s2 >> firstArg.lexeme ;
+      } // if
+
       error_.mMessage = "ERROR (attempt to apply non-function) : " + firstArg.lexeme ;
       throw error_ ;
     } // else if
@@ -1244,7 +1261,7 @@ TokenTreeNodePtr EvalExp( TokenTreeNodePtr inTokenTreeHead ) {
     else if ( firstArg.tokenType == SYMBOL || firstArg.tokenType == PRIMITIVE ) { 
       string sym ; 
       if ( gDefineTable.IsInternalFunc( firstArg, sym ) ) { // if SYM is the name of a known function
-        if ( !toplevel && ( sym == "clean-environment" || sym == "define" || sym == "exit" ) ) {
+        if ( !topFunc && ( sym == "clean-environment" || sym == "define" || sym == "exit" ) ) {
           ErrorType error_ ;
           if ( sym == "clean-environment" )
             sym = "CLEAN-ENVIRONMENT" ;
@@ -1259,11 +1276,11 @@ TokenTreeNodePtr EvalExp( TokenTreeNodePtr inTokenTreeHead ) {
 
         else if ( sym == "define" || sym == "cond" ) {
           // check format of exp
-          if ( Define( inTokenTreeHead ) ) { 
+          if ( sym == "define" && Define( inTokenTreeHead ) ) { 
             return Evaluate( "define", inTokenTreeHead ) ; 
           } // if
  
-          else if ( Cond( inTokenTreeHead ) ) { 
+          else if ( sym == "cond" && Cond( inTokenTreeHead ) ) { 
             return Evaluate( "cond", inTokenTreeHead ) ;
           } // else if
 
@@ -1281,8 +1298,15 @@ TokenTreeNodePtr EvalExp( TokenTreeNodePtr inTokenTreeHead ) {
         } // else if
 
         else if ( !toplevel ) {
-          inTokenTreeHead -> left = EvalExp( inTokenTreeHead -> left ) ;
-          return EvalExp( inTokenTreeHead ) ;
+          inTokenTreeHead -> left = EvalExp( inTokenTreeHead -> left, false ) ;
+          if ( topFunc && inTokenTreeHead -> left -> internal ) { // cmd is (...)
+            ErrorType error_ ;
+            error_.mMessage = "ERROR (attempt to apply non-function) : " ;
+            error_.mTokenTree = inTokenTreeHead -> left ;
+            throw error_ ;
+          } // if
+
+          return EvalExp( inTokenTreeHead, topFunc ) ;
         } // else if
  
         else if ( sym == "if" ) {
@@ -1292,7 +1316,7 @@ TokenTreeNodePtr EvalExp( TokenTreeNodePtr inTokenTreeHead ) {
             throw error_ ;
           } // if
 
-          return EvalExp( Evaluate( sym, inTokenTreeHead ) ) ;
+          return EvalExp( Evaluate( sym, inTokenTreeHead ), false ) ;
         } // else if
 
         else { // SYM is a known function name 'abc', which is neither 
@@ -1336,7 +1360,7 @@ TokenTreeNodePtr EvalExp( TokenTreeNodePtr inTokenTreeHead ) {
 
 TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already check num of argument
   if ( cmd == "define" ) {
-    TokenTreeNodePtr bindingHead = EvalExp( inHead -> right -> right -> left ) ;
+    TokenTreeNodePtr bindingHead = EvalExp( inHead -> right -> right -> left, false ) ;
     string bindingSymbol = inHead -> right -> left -> token.lexeme ;
     gDefineTable.BindingSymbol( bindingSymbol, bindingHead ) ;
     cout << bindingSymbol + " defined\n" ;
@@ -1344,20 +1368,28 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   } // if
 
   else if ( cmd == "car" || cmd == "cdr" ) {
-    TokenTreeNodePtr secondArg = inHead -> right -> left ; // find second arg
-    if ( !secondArg -> internal && secondArg -> token.tokenType != SYMBOL ) {
+    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left, false ) ; // find second arg
+    if ( !arg -> internal ) {
       ErrorType error_ ;
-      error_.mMessage = "ERROR (" + cmd + " with incorrect argument type) :" + secondArg -> token.lexeme ;
+      if ( arg -> token.tokenType == FLOAT ) {
+        stringstream s1, s2 ; 
+        float temp ;
+        s1 << arg -> token.lexeme ;
+        s1 >> temp ;
+        s2 << fixed << setprecision( 3 ) << temp ;
+        s2 >> arg -> token.lexeme  ;
+      } // if
+
+      error_.mMessage = "ERROR (" + cmd + " with incorrect argument type) : " + arg -> token.lexeme ;
       throw error_ ;
     } // if
 
-    TokenTreeNodePtr sExp = EvalExp( secondArg ) ;
     if ( cmd == "car" ) {
-      return sExp -> left ;
+      return arg -> left ;
     } // if
 
-    else { // cmd == "cdr
-      return sExp -> right ;
+    else { // cmd == "cdr"
+      return arg -> right ;
     } // else 
   } // else if
 
@@ -1371,8 +1403,8 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
     resultHead -> internal = true ;
     TokenTreeNodePtr arg2 = inHead -> right -> left ;
     TokenTreeNodePtr arg3 = inHead -> right -> right -> left ;
-    resultHead -> left = EvalExp( arg2 ) ;
-    resultHead -> right = EvalExp( arg3 ) ;
+    resultHead -> left = EvalExp( arg2, false ) ;
+    resultHead -> right = EvalExp( arg3, false ) ;
     return resultHead ;
   } // else if
 
@@ -1383,7 +1415,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
     while ( inHead -> right != NULL ) {
       if ( resultHead == NULL ) {
         resultHead = new TokenTreeNode ;
-        resultHead -> left = EvalExp( inHead -> left ) ;
+        resultHead -> left = EvalExp( inHead -> left, false ) ;
         resultHead -> right = gNilTokenPtr ;
         resultHead -> internal = true ;
         resultWalk = resultHead ;
@@ -1392,7 +1424,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
       else {
         resultWalk -> right = new TokenTreeNode ;
         resultWalk = resultWalk -> right ;
-        resultWalk -> left = EvalExp( inHead -> left ) ;
+        resultWalk -> left = EvalExp( inHead -> left, false ) ;
         resultWalk -> right = gNilTokenPtr ;
         resultWalk -> internal = true ;
       } // else
@@ -1408,7 +1440,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
 
   else if ( cmd == "atom?" ) {
     TokenTreeNodePtr arg = inHead -> right -> left ;
-    arg = EvalExp( arg ) ;
+    arg = EvalExp( arg, false ) ;
     if ( arg -> internal ) {
       return gNilTokenPtr ;
     } // if
@@ -1419,7 +1451,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   } // else if
 
   else if ( cmd == "pair?" ) {
-    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left ) ;
+    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left, false ) ;
     if ( arg -> internal )
       return gTTokenPtr ;
 
@@ -1428,7 +1460,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
 
   else if ( cmd == "list?" ) {
     TokenTreeNodePtr arg = inHead -> right -> left ;
-    arg = EvalExp( arg ) ;
+    arg = EvalExp( arg, false ) ;
     if ( IsList( arg ) ) {
       return gTTokenPtr ;
     } // if
@@ -1440,7 +1472,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
 
   else if ( cmd == "null?" ) {
     TokenTreeNodePtr arg = inHead -> right -> left ;
-    arg = EvalExp( arg ) ;
+    arg = EvalExp( arg, false ) ;
     if ( !arg -> internal && arg -> token.tokenType == NIL ) {
       return gTTokenPtr ;
     } // if
@@ -1451,7 +1483,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   } // else if
 
   else if ( cmd == "integer?" ) {
-    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left ) ;
+    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left, false ) ;
     if ( arg -> token.tokenType == INT ) {
       return gTTokenPtr ;
     } // if
@@ -1462,7 +1494,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   } // else if
 
   else if ( cmd == "real?" ) {
-    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left ) ;
+    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left, false ) ;
     if ( !arg -> internal && ( arg -> token.tokenType == INT || arg -> token.tokenType == FLOAT ) ) {
       return gTTokenPtr ;
     } // if
@@ -1473,7 +1505,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   } // else if
 
   else if ( cmd == "number?" ) { // in OurSchem, real? = number?, but not in Scheme 
-    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left ) ; // (there are complex-numbers)
+    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left, false ) ; // (there are complex-numbers)
     if ( !arg -> internal && ( arg -> token.tokenType == INT || arg -> token.tokenType == FLOAT ) ) {
       return gTTokenPtr ;
     } // if
@@ -1484,7 +1516,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   } // else if
 
   else if ( cmd == "string?" ) {
-    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left ) ;
+    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left, false ) ;
     if ( arg -> token.tokenType == STRING ) {
       return gTTokenPtr ;
     } // if
@@ -1495,7 +1527,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   } // else if
 
   else if ( cmd == "boolean?" ) {
-    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left ) ;
+    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left, false ) ;
     if ( arg -> token.tokenType == T || arg -> token.tokenType == NIL ) {
       return gTTokenPtr ;
     } // if
@@ -1506,7 +1538,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   } // else if
 
   else if ( cmd == "symbol?" ) {
-    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left ) ;
+    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left, false ) ;
     if ( arg -> token.tokenType == SYMBOL ) {
       return gTTokenPtr ;
     } // if
@@ -1522,7 +1554,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
     bool isFloat = false ;
     inHead = inHead -> right ;
     do {
-      TokenTreeNodePtr arg = EvalExp( inHead -> left ) ;
+      TokenTreeNodePtr arg = EvalExp( inHead -> left, false ) ;
       if ( !arg -> internal && ( arg -> token.tokenType == INT || arg -> token.tokenType == FLOAT ) ) {
         stringstream s1 ;
         s1 << arg -> token.lexeme ; 
@@ -1545,7 +1577,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   
       else {
         ErrorType error_ ;
-        error_.mMessage = "ERROR (+ with incorrect argument type) :" ;
+        error_.mMessage = "ERROR (+ with incorrect argument type) : " ;
         error_.mTokenTree = arg ;
         throw error_ ;
       } // else
@@ -1576,7 +1608,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
     bool isFloat = false, first = true ;
     inHead = inHead -> right ;
     do {
-      TokenTreeNodePtr arg = EvalExp( inHead -> left ) ;
+      TokenTreeNodePtr arg = EvalExp( inHead -> left, false ) ;
       if ( !arg -> internal && ( arg -> token.tokenType == INT || arg -> token.tokenType == FLOAT ) ) {
         stringstream s1 ;
         s1 << arg -> token.lexeme ; 
@@ -1611,7 +1643,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   
       else {
         ErrorType error_ ;
-        error_.mMessage = "ERROR (- with incorrect argument type) :" ;
+        error_.mMessage = "ERROR (- with incorrect argument type) : " ;
         error_.mTokenTree = arg ;
         throw error_ ;
       } // else
@@ -1642,7 +1674,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
     bool isFloat = false ;
     inHead = inHead -> right ;
     do {
-      TokenTreeNodePtr arg = EvalExp( inHead -> left ) ;
+      TokenTreeNodePtr arg = EvalExp( inHead -> left, false ) ;
       if ( !arg -> internal && ( arg -> token.tokenType == INT || arg -> token.tokenType == FLOAT ) ) {
         stringstream s1 ;
         s1 << arg -> token.lexeme ; 
@@ -1665,7 +1697,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   
       else {
         ErrorType error_ ;
-        error_.mMessage = "ERROR (* with incorrect argument type) :" ;
+        error_.mMessage = "ERROR (* with incorrect argument type) : " ;
         error_.mTokenTree = arg ;
         throw error_ ;
       } // else
@@ -1696,7 +1728,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
     bool isFloat = false, first = true ;
     inHead = inHead -> right ;
     do {
-      TokenTreeNodePtr arg = EvalExp( inHead -> left ) ;
+      TokenTreeNodePtr arg = EvalExp( inHead -> left, false ) ;
       if ( !arg -> internal && ( arg -> token.tokenType == INT || arg -> token.tokenType == FLOAT ) ) {
         stringstream s1 ;
         s1 << arg -> token.lexeme ; 
@@ -1745,7 +1777,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   
       else {
         ErrorType error_ ;
-        error_.mMessage = "ERROR (/ with incorrect argument type) :" ;
+        error_.mMessage = "ERROR (/ with incorrect argument type) : " ;
         error_.mTokenTree = arg ;
         throw error_ ;
       } // else
@@ -1779,11 +1811,11 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
       float main_float = 0, contrast_float = 0 ;
       bool isFirst = true, mainIsFloat = false ;
       do {
-        TokenTreeNodePtr arg = EvalExp( walk -> left ) ;
+        TokenTreeNodePtr arg = EvalExp( walk -> left, false ) ;
         if ( !arg -> internal && ( arg -> token.tokenType == INT || arg -> token.tokenType == FLOAT ) ) {
           stringstream s1 ;
           s1 << arg -> token.lexeme ; 
-          if ( arg -> token.tokenType == FLOAT ) { // deal with float
+          if ( isBigger && arg -> token.tokenType == FLOAT ) { // deal with float
             if ( isFirst ) {
               s1 >> main_float ;
               isFirst = false ;
@@ -1799,7 +1831,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
             } // else 
           } // if
      
-          else { // deal with int 
+          else if ( isBigger ) { // deal with int 
             if ( isFirst ) {
               s1 >> main_int ;
               isFirst = false ;
@@ -1812,18 +1844,18 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
               else 
                 isBigger = ( main_int > contrast_int ) ;
             } // else
-          } // else
+          } // else if
     
           walk = walk -> right ;
         } // if
     
         else {
           ErrorType error_ ;
-          error_.mMessage = "ERROR (> with incorrect argument type) :" ;
+          error_.mMessage = "ERROR (> with incorrect argument type) : " ;
           error_.mTokenTree = arg ;
           throw error_ ;
         } // else
-      } while ( walk -> internal && isBigger ) ;
+      } while ( walk -> internal ) ;
     } // while
 
     if ( isBigger )
@@ -1841,11 +1873,11 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
       float main_float = 0, contrast_float = 0 ;
       bool isFirst = true, mainIsFloat = false ;
       do {
-        TokenTreeNodePtr arg = EvalExp( walk -> left ) ;
+        TokenTreeNodePtr arg = EvalExp( walk -> left, false ) ;
         if ( !arg -> internal && ( arg -> token.tokenType == INT || arg -> token.tokenType == FLOAT ) ) {
           stringstream s1 ;
           s1 << arg -> token.lexeme ; 
-          if ( arg -> token.tokenType == FLOAT ) { // deal with float
+          if ( isBiggerEqual && arg -> token.tokenType == FLOAT ) { // deal with float
             if ( isFirst ) {
               s1 >> main_float ;
               isFirst = false ;
@@ -1861,7 +1893,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
             } // else 
           } // if
      
-          else { // deal with int 
+          else if ( isBiggerEqual ) { // deal with int 
             if ( isFirst ) {
               s1 >> main_int ;
               isFirst = false ;
@@ -1874,18 +1906,18 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
               else 
                 isBiggerEqual = ( main_int >= contrast_int ) ;
             } // else
-          } // else
+          } // else if
     
           walk = walk -> right ;
         } // if
     
         else {
           ErrorType error_ ;
-          error_.mMessage = "ERROR (> with incorrect argument type) :" ;
+          error_.mMessage = "ERROR (>= with incorrect argument type) : " ;
           error_.mTokenTree = arg ;
           throw error_ ;
         } // else
-      } while ( walk -> internal && isBiggerEqual ) ;
+      } while ( walk -> internal ) ;
     } // while
 
 
@@ -1904,11 +1936,11 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
       float main_float = 0, contrast_float = 0 ;
       bool isFirst = true, mainIsFloat = false ;
       do {
-        TokenTreeNodePtr arg = EvalExp( walk -> left ) ;
+        TokenTreeNodePtr arg = EvalExp( walk -> left, false ) ;
         if ( !arg -> internal && ( arg -> token.tokenType == INT || arg -> token.tokenType == FLOAT ) ) {
           stringstream s1 ;
           s1 << arg -> token.lexeme ; 
-          if ( arg -> token.tokenType == FLOAT ) { // deal with float
+          if ( isLess && arg -> token.tokenType == FLOAT ) { // deal with float
             if ( isFirst ) {
               s1 >> main_float ;
               isFirst = false ;
@@ -1924,7 +1956,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
             } // else 
           } // if
      
-          else { // deal with int 
+          else if ( isLess ) { // deal with int 
             if ( isFirst ) {
               s1 >> main_int ;
               isFirst = false ;
@@ -1937,18 +1969,18 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
               else 
                 isLess = ( main_int < contrast_int ) ;
             } // else
-          } // else
+          } // else if
     
           walk = walk -> right ;
         } // if
     
         else {
           ErrorType error_ ;
-          error_.mMessage = "ERROR (> with incorrect argument type) :" ;
+          error_.mMessage = "ERROR (< with incorrect argument type) : " ;
           error_.mTokenTree = arg ;
           throw error_ ;
         } // else
-      } while ( walk -> internal && isLess ) ;
+      } while ( walk -> internal ) ;
     } // while
 
 
@@ -1967,11 +1999,11 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
       float main_float = 0, contrast_float = 0 ;
       bool isFirst = true, mainIsFloat = false ;
       do {
-        TokenTreeNodePtr arg = EvalExp( walk -> left ) ;
+        TokenTreeNodePtr arg = EvalExp( walk -> left, false ) ;
         if ( !arg -> internal && ( arg -> token.tokenType == INT || arg -> token.tokenType == FLOAT ) ) {
           stringstream s1 ;
           s1 << arg -> token.lexeme ; 
-          if ( arg -> token.tokenType == FLOAT ) { // deal with float
+          if ( isLessEqual && arg -> token.tokenType == FLOAT ) { // deal with float
             if ( isFirst ) {
               s1 >> main_float ;
               isFirst = false ;
@@ -1987,7 +2019,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
             } // else 
           } // if
      
-          else { // deal with int 
+          else if ( isLessEqual ) { // deal with int 
             if ( isFirst ) {
               s1 >> main_int ;
               isFirst = false ;
@@ -2000,18 +2032,18 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
               else 
                 isLessEqual = ( main_int <= contrast_int ) ;
             } // else
-          } // else
+          } // else if
     
           walk = walk -> right ;
         } // if
     
         else {
           ErrorType error_ ;
-          error_.mMessage = "ERROR (> with incorrect argument type) :" ;
+          error_.mMessage = "ERROR (<= with incorrect argument type) : " ;
           error_.mTokenTree = arg ;
           throw error_ ;
         } // else
-      } while ( walk -> internal && isLessEqual ) ;
+      } while ( walk -> internal ) ;
     } // while
 
 
@@ -2030,11 +2062,11 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
       float main_float = 0, contrast_float = 0 ;
       bool isFirst = true, mainIsFloat = false ;
       do {
-        TokenTreeNodePtr arg = EvalExp( walk -> left ) ;
+        TokenTreeNodePtr arg = EvalExp( walk -> left, false ) ;
         if ( !arg -> internal && ( arg -> token.tokenType == INT || arg -> token.tokenType == FLOAT ) ) {
           stringstream s1 ;
           s1 << arg -> token.lexeme ; 
-          if ( arg -> token.tokenType == FLOAT ) { // deal with float
+          if ( isEqual && arg -> token.tokenType == FLOAT ) { // deal with float
             if ( isFirst ) {
               s1 >> main_float ;
               isFirst = false ;
@@ -2050,7 +2082,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
             } // else 
           } // if
      
-          else { // deal with int 
+          else if ( isEqual ) { // deal with int 
             if ( isFirst ) {
               s1 >> main_int ;
               isFirst = false ;
@@ -2063,18 +2095,18 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
               else 
                 isEqual = ( main_int == contrast_int ) ;
             } // else
-          } // else
+          } // else if
     
           walk = walk -> right ;
         } // if
     
         else {
           ErrorType error_ ;
-          error_.mMessage = "ERROR (> with incorrect argument type) :" ;
+          error_.mMessage = "ERROR (= with incorrect argument type) : " ;
           error_.mTokenTree = arg ;
           throw error_ ;
         } // else
-      } while ( walk -> internal && isEqual ) ;
+      } while ( walk -> internal ) ;
     } // while
 
 
@@ -2095,10 +2127,10 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
 
     inHead = inHead -> right ;
     do {
-      TokenTreeNodePtr arg = EvalExp( inHead -> left ) ;
+      TokenTreeNodePtr arg = EvalExp( inHead -> left, false ) ;
       if ( arg -> internal || arg -> token.tokenType != STRING ) {
         ErrorType error_ ;
-        error_.mMessage = "ERROR (string-append with incorrect argument type) :" ;
+        error_.mMessage = "ERROR (string-append with incorrect argument type) : " ;
         error_.mTokenTree = arg ;
         throw error_ ;
       } // if
@@ -2122,26 +2154,28 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
       string mainStr = "", cmpStr = "" ;
       bool first = true ;
       do {
-        TokenTreeNodePtr arg = EvalExp( walk -> left ) ;
-        if ( arg -> internal || arg -> token.tokenType != STRING ) {
+        TokenTreeNodePtr arg = EvalExp( walk -> left, false ) ;
+        if ( ( arg -> internal || arg -> token.tokenType != STRING ) ) {
           ErrorType error_ ;
-          error_.mMessage = "ERROR (string>? with incorrect argument type) :" ;
+          error_.mMessage = "ERROR (string>? with incorrect argument type) : " ;
           error_.mTokenTree = arg ;
           throw error_ ;
         } // if
   
-        if ( first ) {
-          mainStr = arg -> token.lexeme ;
-          first = false ;
+        if ( isBigger ) {
+          if ( first ) {
+            mainStr = arg -> token.lexeme ;
+            first = false ;
+          } // if
+    
+          else {
+            cmpStr = arg -> token.lexeme ;
+            isBigger = mainStr > cmpStr ;
+          } // else 
         } // if
   
-        else {
-          cmpStr = arg -> token.lexeme ;
-          isBigger = mainStr > cmpStr ;
-        } // else 
-  
         walk = walk -> right ;
-      } while ( walk -> internal && isBigger ) ;
+      } while ( walk -> internal ) ;
     } // while
 
     if ( isBigger )
@@ -2158,26 +2192,28 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
       string mainStr = "", cmpStr = "" ;
       bool first = true ;
       do {
-        TokenTreeNodePtr arg = EvalExp( walk -> left ) ;
-        if ( arg -> internal || arg -> token.tokenType != STRING ) {
+        TokenTreeNodePtr arg = EvalExp( walk -> left, false ) ;
+        if ( ( arg -> internal || arg -> token.tokenType != STRING ) ) {
           ErrorType error_ ;
-          error_.mMessage = "ERROR (string>? with incorrect argument type) :" ;
+          error_.mMessage = "ERROR (string<? with incorrect argument type) : " ;
           error_.mTokenTree = arg ;
           throw error_ ;
         } // if
   
-        if ( first ) {
-          mainStr = arg -> token.lexeme ;
-          first = false ;
+        if ( isLess ) {
+          if ( first ) {
+            mainStr = arg -> token.lexeme ;
+            first = false ;
+          } // if
+    
+          else {
+            cmpStr = arg -> token.lexeme ;
+            isLess = mainStr < cmpStr ;
+          } // else 
         } // if
   
-        else {
-          cmpStr = arg -> token.lexeme ;
-          isLess = mainStr < cmpStr ;
-        } // else 
-  
         walk = walk -> right ;
-      } while ( walk -> internal && isLess ) ;
+      } while ( walk -> internal ) ;
     } // while
 
     if ( isLess )
@@ -2194,26 +2230,28 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
       string mainStr = "", cmpStr = "" ;
       bool first = true ;
       do {
-        TokenTreeNodePtr arg = EvalExp( walk -> left ) ;
-        if ( arg -> internal || arg -> token.tokenType != STRING ) {
+        TokenTreeNodePtr arg = EvalExp( walk -> left, false ) ;
+        if ( ( arg -> internal || arg -> token.tokenType != STRING ) ) {
           ErrorType error_ ;
-          error_.mMessage = "ERROR (string>? with incorrect argument type) :" ;
+          error_.mMessage = "ERROR (string=? with incorrect argument type) : " ;
           error_.mTokenTree = arg ;
           throw error_ ;
         } // if
   
-        if ( first ) {
-          mainStr = arg -> token.lexeme ;
-          first = false ;
+        if ( isEqual ) {
+          if ( first ) {
+            mainStr = arg -> token.lexeme ;
+            first = false ;
+          } // if
+    
+          else {
+            cmpStr = arg -> token.lexeme ;
+            isEqual = mainStr == cmpStr ;
+          } // else 
         } // if
   
-        else {
-          cmpStr = arg -> token.lexeme ;
-          isEqual = mainStr == cmpStr ;
-        } // else 
-  
         walk = walk -> right ;
-      } while ( walk -> internal && isEqual ) ;
+      } while ( walk -> internal ) ;
     } // while
 
     if ( isEqual )
@@ -2223,7 +2261,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   } // else if
 
   else if ( cmd == "not" ) {
-    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left ) ;
+    TokenTreeNodePtr arg = EvalExp( inHead -> right -> left, false ) ;
     if ( !arg -> internal && arg -> token.tokenType == NIL ) 
       return gTTokenPtr ;
 
@@ -2235,7 +2273,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
     TokenTreeNodePtr arg ;
     inHead = inHead -> right ;
     do { 
-      arg = EvalExp( inHead -> left ) ;
+      arg = EvalExp( inHead -> left, false ) ;
       if ( !arg -> internal && arg -> token.tokenType == NIL )
         hasNil = true ;
 
@@ -2254,7 +2292,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
     inHead = inHead -> right ;
     bool hasResult = false ;
     do { 
-      arg = EvalExp( inHead -> left ) ;
+      arg = EvalExp( inHead -> left, false ) ;
       if ( arg -> internal || arg -> token.tokenType != NIL ) {
         result = arg ;
         hasResult = true ;
@@ -2272,8 +2310,8 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
 
   else if ( cmd == "eqv?" ) {
     TokenTreeNodePtr arg1, arg2 ;
-    arg1 = EvalExp( inHead -> right -> left ) ;
-    arg2 = EvalExp( inHead -> right -> right -> left ) ;
+    arg1 = EvalExp( inHead -> right -> left, false ) ;
+    arg2 = EvalExp( inHead -> right -> right -> left, false ) ;
     if ( arg1 == arg2 ) // occupy the same memory
       return gTTokenPtr ;
  
@@ -2290,8 +2328,8 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
 
   else if ( cmd == "equal?" ) {
     TokenTreeNodePtr arg1, arg2 ;
-    arg1 = EvalExp( inHead -> right -> left ) ;
-    arg2 = EvalExp( inHead -> right -> right -> left ) ;
+    arg1 = EvalExp( inHead -> right -> left, false ) ;
+    arg2 = EvalExp( inHead -> right -> right -> left, false ) ;
     bool isEqual = Equal_rec( arg1, arg2 ) ;
     if ( isEqual ) 
       return gTTokenPtr ;
@@ -2303,7 +2341,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
     TokenTreeNodePtr result ;
     inHead = inHead -> right ;
     while ( inHead -> internal ) {
-      result = EvalExp( inHead -> left ) ;
+      result = EvalExp( inHead -> left, false ) ;
       inHead = inHead -> right ;
     } // while
 
@@ -2313,7 +2351,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
   else if ( cmd == "if" ) {
     bool doIt = true ;
     TokenTreeNodePtr walk = inHead -> right ; // arg1
-    TokenTreeNodePtr arg1 = EvalExp( walk -> left ) ;
+    TokenTreeNodePtr arg1 = EvalExp( walk -> left, false ) ;
     if ( !arg1 -> internal && arg1 -> token.tokenType == NIL )
       doIt = false ;
 
@@ -2325,7 +2363,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
     else { // do arg3 
       if ( !walk -> right -> internal ) { // not have arg3, its nil
         ErrorType error_ ;
-        error_.mMessage = "ERROR (no return value) :" ;
+        error_.mMessage = "ERROR (no return value) : " ;
         error_.mTokenTree = inHead ;
         throw error_ ;
       } // if
@@ -2347,7 +2385,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
 
       arg = walk -> left ;
       if ( !isLast ) 
-        bool_ = EvalExp( arg -> left ) ; 
+        bool_ = EvalExp( arg -> left, false ) ; 
 
       else { 
         // check if arg is else
@@ -2359,7 +2397,7 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
  
         else { 
           // if it is not else, eval it
-          bool_ = EvalExp( arg -> left ) ;
+          bool_ = EvalExp( arg -> left, false ) ;
         } // else
       } // else
 
@@ -2371,21 +2409,21 @@ TokenTreeNodePtr Evaluate( string cmd, TokenTreeNodePtr inHead ) { // already ch
         // find last arg
         arg = arg -> right ;
         while ( arg -> right -> internal ) {
-          EvalExp( arg -> left ) ;
+          EvalExp( arg -> left, false ) ;
           arg = arg -> right ;
         } // while
 
-        return EvalExp( arg -> left ) ;
+        return EvalExp( arg -> left, false ) ;
       } // else if
 
       else {
         // find last arg
         while ( arg -> right -> internal ) {
-          EvalExp( arg -> left ) ;
+          EvalExp( arg -> left, false ) ;
           arg = arg -> right ;
         } // while
 
-        return EvalExp( arg -> left ) ;
+        return EvalExp( arg -> left, false ) ;
       } // else
 
       walk = walk -> right ;
@@ -2628,6 +2666,11 @@ bool CheckArgNum( string sym, TokenTreeNodePtr inTokenTree ) { // define doesn't
       return true ;
   } // else if
 
+  else if ( sym == "exit" ) {
+    if ( numOfArg == 0 ) 
+      return true ;
+  } // else if
+
   return false ;
 } // CheckArgNum()
 
@@ -2699,19 +2742,5 @@ bool Cond( TokenTreeNodePtr head ) {
 } // Cond()
 
 void DefineTable :: BindingSymbol( string symbol, TokenTreeNodePtr tokenTreeHead ) {
-  if ( !tokenTreeHead -> internal && tokenTreeHead -> token.tokenType == SYMBOL ) { // binding is a symbol
-    map<string,TokenTreeNodePtr> :: iterator it_tokenTree ;
-    it_tokenTree = mDefineTable.find( tokenTreeHead -> token.lexeme ) ;
-    if ( it_tokenTree == mDefineTable.end() ) { // unbound symbol
-      ErrorType error_ ;
-      error_.mMessage = "ERROR (unbound symbol) : " + tokenTreeHead -> token.lexeme ;
-      throw error_ ;
-    } // if
-
-    else {
-      tokenTreeHead = it_tokenTree -> second ;
-    } // else
-  } // if
-
   mDefineTable[symbol] = tokenTreeHead ;
 } // DefineTable::BindingSymbol()
