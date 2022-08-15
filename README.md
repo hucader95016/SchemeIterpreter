@@ -34,7 +34,10 @@ Print : 'Welcome to OurScheme!'
   Print : 'Thanks for using OurScheme!'
   
   -------------------------------------------------------------------------------
-  
+  括號內的數字指的是這個function可接受的argument的數目 - i.e., the number of
+ arguments that this function can take)
+ 
+ 
   1. Constructors
 
   cons (2)
