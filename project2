@@ -60,6 +60,7 @@ class TokenTree {
 
   public :
   void BuildTokenTree( vector<Token> tokenList ) ;
+  
   TokenTreeNodePtr GetTokenTree() {
     return mHead ;
   } // GetTokenTree()
@@ -502,18 +503,18 @@ void SkipWhiteSpace_special() { // use it after find a SExp
   gLine = 1 ;
   gColumn = 1 ;
   bool enterEncounter = false ;
-  while ( cin.peek() != EOF && IsWhiteSpace( cin.peek() ) && !enterEncounter ) {
+  while ( !enterEncounter && cin.peek() != EOF && IsWhiteSpace( cin.peek() ) ) {
     char ch ;
     scanf( "%c", &ch ) ;
     gColumn++ ;
     if ( ch == '\n' ) {
       enterEncounter = true ;
-      gLine = 1 ;
+      gLine++ ;
       gColumn = 1 ;
     } // if
   } // while
 
-  if ( !enterEncounter && cin.peek() == ';' ) {
+  if ( !enterEncounter && cin.peek() == ';' ) { // skip line comment
     Skip_sameLine() ;
   } // if
 } // SkipWhiteSpace_special()
